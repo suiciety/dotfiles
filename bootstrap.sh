@@ -116,7 +116,7 @@ if command -v git &>/dev/null; then
         success "armando-rios/tmux already installed"
     else
         info "Installing armando-rios/tmux..."
-        git clone --depth=1 https://github.com/armando-rios/tmux "${PLUGINS_DIR}/tmux"
+        git clone https://github.com/armando-rios/tmux "${PLUGINS_DIR}/tmux"
         success "armando-rios/tmux installed"
     fi
 else
