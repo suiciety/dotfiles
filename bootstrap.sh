@@ -7,7 +7,7 @@
 # What it does:
 #   1. Imports the GPG public key
 #   2. Adds the SSH public key to ~/.ssh/authorized_keys (skips if already present)
-#   3. Installs tmux if missing; warns if version < 3.4 (status bar theme requires 3.4+)
+#   3. Installs tmux if missing; prompts to build 3.6 from source if version < 3.4
 #   4. Writes tmux.conf (backs up any existing config first)
 #   5. Installs TPM and tmux plugins directly via git (tpm, tmux-sensible, armando-rios/tmux)
 #   6. Installs unzip if missing (required by oh-my-posh installer)
@@ -50,6 +50,29 @@ fi
 # ── 3. Install tmux ───────────────────────────────────────────────────────────
 
 TMUX_MIN_VERSION="3.4"
+TMUX_BUILD_VERSION="3.6"
+
+tmux_build_from_source() {
+    info "Building tmux ${TMUX_BUILD_VERSION} from source..."
+    local tmp
+    tmp=$(mktemp -d)
+    if command -v apt-get &>/dev/null; then
+        sudo apt-get install -y libevent-dev libncurses-dev build-essential bison pkg-config
+    elif command -v dnf &>/dev/null; then
+        sudo dnf install -y libevent-devel ncurses-devel gcc make bison pkg-config
+    elif command -v pacman &>/dev/null; then
+        sudo pacman -S --noconfirm libevent ncurses base-devel bison pkg-config
+    else
+        warn "Cannot install build dependencies: no supported package manager found."
+        rm -rf "${tmp}"
+        return 1
+    fi
+    curl -fsSL "https://github.com/tmux/tmux/releases/download/${TMUX_BUILD_VERSION}/tmux-${TMUX_BUILD_VERSION}.tar.gz" \
+        | tar -xz -C "${tmp}"
+    (cd "${tmp}/tmux-${TMUX_BUILD_VERSION}" && ./configure && make && sudo make install)
+    rm -rf "${tmp}"
+    success "tmux $(tmux -V) built and installed to /usr/local/bin"
+}
 
 if ! command -v tmux &>/dev/null; then
     info "tmux not found, installing..."
@@ -67,11 +90,18 @@ if ! command -v tmux &>/dev/null; then
 fi
 
 if command -v tmux &>/dev/null; then
-    TMUX_VER=$(tmux -V | grep -oP '[\d]+\.[\d]+' | head -1)
-    success "tmux ${TMUX_VER} installed"
+    TMUX_VER=$(tmux -V | grep -oP '[0-9]+\.[0-9]+' | head -1)
     if awk -v v="${TMUX_VER}" -v m="${TMUX_MIN_VERSION}" 'BEGIN { exit (v >= m) ? 0 : 1 }'; then
+        success "tmux ${TMUX_VER} meets minimum version requirement (${TMUX_MIN_VERSION}+)"
+    else
         warn "tmux ${TMUX_VER} is below ${TMUX_MIN_VERSION} — the status bar theme may not render correctly."
-        warn "On Debian, consider using Kali WSL or upgrading tmux manually."
+        printf "[bootstrap] ? Upgrade tmux to ${TMUX_BUILD_VERSION} by building from source? [y/N] "
+        read -r UPGRADE_TMUX </dev/tty
+        if [[ "${UPGRADE_TMUX}" =~ ^[Yy]$ ]]; then
+            tmux_build_from_source
+        else
+            warn "Skipping tmux upgrade. Theme rendering may be degraded."
+        fi
     fi
 fi
 
