@@ -9,7 +9,7 @@
 #   2. Adds the SSH public key to ~/.ssh/authorized_keys (skips if already present)
 #   3. Installs tmux if missing
 #   4. Writes tmux.conf (backs up any existing config first)
-#   5. Installs TPM (tmux plugin manager) if missing
+#   5. Installs TPM and tmux plugins directly via git (tpm, tmux-sensible, armando-rios/tmux)
 #   6. Installs unzip if missing (required by oh-my-posh installer)
 #   7. Installs oh-my-posh if missing
 #   8. Deploys the atomic.omp.json theme
@@ -87,26 +87,40 @@ else
     success "tmux.conf installed"
 fi
 
-# ── 5. TPM (tmux plugin manager) ──────────────────────────────────────────────
+# ── 5. TPM and tmux plugins ───────────────────────────────────────────────────
 
-TPM_DIR="${HOME}/.tmux/plugins/tpm"
+PLUGINS_DIR="${HOME}/.tmux/plugins"
+TPM_DIR="${PLUGINS_DIR}/tpm"
 
-if [[ -d "${TPM_DIR}" ]]; then
-    success "TPM already installed"
-else
-    if command -v git &>/dev/null; then
+if command -v git &>/dev/null; then
+    # TPM
+    if [[ -d "${TPM_DIR}" ]]; then
+        success "TPM already installed"
+    else
         info "Installing TPM..."
         git clone --depth=1 https://github.com/tmux-plugins/tpm "${TPM_DIR}"
         success "TPM installed"
-    else
-        warn "git not found — TPM not installed. Install git and re-run this script."
     fi
-fi
 
-if [[ -d "${TPM_DIR}" ]]; then
-    info "Installing tmux plugins..."
-    "${TPM_DIR}/bin/install_plugins" 2>&1 | grep -v "^$" || true
-    success "tmux plugins installed"
+    # tmux-sensible
+    if [[ -d "${PLUGINS_DIR}/tmux-sensible" ]]; then
+        success "tmux-sensible already installed"
+    else
+        info "Installing tmux-sensible..."
+        git clone --depth=1 https://github.com/tmux-plugins/tmux-sensible "${PLUGINS_DIR}/tmux-sensible"
+        success "tmux-sensible installed"
+    fi
+
+    # armando-rios/tmux status bar theme
+    if [[ -d "${PLUGINS_DIR}/tmux" ]]; then
+        success "armando-rios/tmux already installed"
+    else
+        info "Installing armando-rios/tmux..."
+        git clone --depth=1 https://github.com/armando-rios/tmux "${PLUGINS_DIR}/tmux"
+        success "armando-rios/tmux installed"
+    fi
+else
+    warn "git not found — tmux plugins not installed. Install git and re-run this script."
 fi
 
 # ── 6. unzip (required by oh-my-posh installer) ──────────────────────────────
