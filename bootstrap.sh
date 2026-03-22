@@ -112,11 +112,12 @@ if command -v git &>/dev/null; then
     fi
 
     # armando-rios/tmux status bar theme
-    if [[ -d "${PLUGINS_DIR}/tmux" ]]; then
+    if [[ -d "${PLUGINS_DIR}/armando-rios/tmux" ]]; then
         success "armando-rios/tmux already installed"
     else
         info "Installing armando-rios/tmux..."
-        git clone https://github.com/armando-rios/tmux "${PLUGINS_DIR}/tmux"
+        mkdir -p "${PLUGINS_DIR}/armando-rios"
+        git clone https://github.com/armando-rios/tmux "${PLUGINS_DIR}/armando-rios/tmux"
         success "armando-rios/tmux installed"
     fi
 else
