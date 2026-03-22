@@ -10,9 +10,10 @@
 #   3. Installs tmux if missing
 #   4. Writes tmux.conf (backs up any existing config first)
 #   5. Installs TPM (tmux plugin manager) if missing
-#   6. Installs oh-my-posh if missing
-#   7. Deploys the atomic.omp.json theme
-#   8. Configures fish and/or bash to use oh-my-posh
+#   6. Installs unzip if missing (required by oh-my-posh installer)
+#   7. Installs oh-my-posh if missing
+#   8. Deploys the atomic.omp.json theme
+#   9. Configures fish and/or bash to use oh-my-posh
 
 set -euo pipefail
 
@@ -108,7 +109,29 @@ if [[ -d "${TPM_DIR}" ]]; then
     success "tmux plugins installed"
 fi
 
-# ── 6. oh-my-posh binary ──────────────────────────────────────────────────────
+# ── 6. unzip (required by oh-my-posh installer) ──────────────────────────────
+
+if ! command -v unzip &>/dev/null; then
+    info "unzip not found, installing..."
+    if command -v apt-get &>/dev/null; then
+        sudo apt-get install -y unzip
+    elif command -v pacman &>/dev/null; then
+        sudo pacman -S --noconfirm unzip
+    elif command -v dnf &>/dev/null; then
+        sudo dnf install -y unzip
+    elif command -v brew &>/dev/null; then
+        brew install unzip
+    else
+        warn "Cannot install unzip: no supported package manager found. Install it manually and re-run."
+        exit 1
+    fi
+    success "unzip installed"
+else
+    success "unzip already present"
+fi
+
+# ── 7. oh-my-posh binary ──────────────────────────────────────────────────────
+
 
 OMP_BIN_DIR="${HOME}/.local/bin"
 OMP_THEME_DIR="${HOME}/.config/omp"
@@ -127,7 +150,7 @@ else
     success "oh-my-posh already installed ($(oh-my-posh version 2>/dev/null || echo 'unknown version'))"
 fi
 
-# ── 7. oh-my-posh theme ───────────────────────────────────────────────────────
+# ── 8. oh-my-posh theme ───────────────────────────────────────────────────────
 
 mkdir -p "${OMP_THEME_DIR}"
 REMOTE_THEME=$(curl -fsSL "${BASE_URL}/atomic.omp.json")
@@ -148,7 +171,7 @@ else
     success "oh-my-posh theme installed to ${OMP_THEME}"
 fi
 
-# ── 8. Shell configuration ────────────────────────────────────────────────────
+# ── 9. Shell configuration ────────────────────────────────────────────────────
 
 OMP_FISH_LINE='oh-my-posh init fish --config ~/.config/omp/atomic.omp.json | source'
 OMP_BASH_LINE='eval "$(oh-my-posh init bash --config ~/.config/omp/atomic.omp.json)"'
