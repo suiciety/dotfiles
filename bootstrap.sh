@@ -230,3 +230,13 @@ fi
 echo ""
 echo "[bootstrap] Done. If tmux is already running, reload config with: tmux source ~/.tmux.conf"
 echo "[bootstrap] Reload your shell to activate oh-my-posh (exec \$SHELL or start a new session)"
+
+if grep -qi microsoft /proc/version 2>/dev/null; then
+    echo ""
+    warn "WSL detected — Nerd Font glyphs (tmux status bar, oh-my-posh prompt arrows) require"
+    warn "a Nerd Font set in Windows Terminal. Windows Terminal ships with 'CaskaydiaCove Nerd Font'"
+    warn "and 'CaskaydiaMono Nerd Font' out of the box. To enable:"
+    warn "  Windows Terminal → Settings → your Debian profile → Appearance → Font face"
+    warn "  Set to: CaskaydiaCove Nerd Font (or any other Nerd Font you have installed)"
+    warn "  Alternatively install one from: https://www.nerdfonts.com/font-downloads"
+fi
