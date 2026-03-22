@@ -94,14 +94,18 @@ else
         info "Installing TPM..."
         git clone --depth=1 https://github.com/tmux-plugins/tpm "${TPM_DIR}"
         success "TPM installed"
-        info "To install plugins: open tmux and press prefix + I (capital i)"
     else
-        warn "git not found — TPM not installed. Install git and run: git clone https://github.com/tmux-plugins/tpm ~/.tmux/plugins/tpm"
+        warn "git not found — TPM not installed. Install git and re-run this script."
     fi
+fi
+
+if [[ -d "${TPM_DIR}" ]]; then
+    info "Installing tmux plugins..."
+    "${TPM_DIR}/bin/install_plugins" 2>&1 | grep -v "^$" || true
+    success "tmux plugins installed"
 fi
 
 # ── Done ──────────────────────────────────────────────────────────────────────
 
 echo ""
-echo "[bootstrap] Done. If this is a new tmux session, run: tmux source ~/.tmux.conf"
-echo "[bootstrap] Then install plugins inside tmux with: prefix + I"
+echo "[bootstrap] Done. If tmux is already running, reload config with: tmux source ~/.tmux.conf"
