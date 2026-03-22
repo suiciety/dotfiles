@@ -7,7 +7,7 @@
 # What it does:
 #   1. Imports the GPG public key
 #   2. Adds the SSH public key to ~/.ssh/authorized_keys (skips if already present)
-#   3. Installs tmux if missing
+#   3. Installs tmux if missing; builds from source if version < 3.4 (apt systems)
 #   4. Writes tmux.conf (backs up any existing config first)
 #   5. Installs TPM and tmux plugins directly via git (tpm, tmux-sensible, armando-rios/tmux)
 #   6. Installs unzip if missing (required by oh-my-posh installer)
@@ -49,6 +49,28 @@ fi
 
 # ── 3. Install tmux ───────────────────────────────────────────────────────────
 
+TMUX_MIN_VERSION="3.4"
+
+tmux_version_ok() {
+    local ver
+    ver=$(tmux -V 2>/dev/null | grep -oP '[\d]+\.[\d]+' | head -1)
+    [[ -z "${ver}" ]] && return 1
+    awk -v v="${ver}" -v m="${TMUX_MIN_VERSION}" 'BEGIN { exit (v >= m) ? 0 : 1 }'
+}
+
+build_tmux_from_source() {
+    local version="3.6"
+    info "Building tmux ${version} from source..."
+    sudo apt-get install -y libevent-dev libncurses-dev build-essential bison pkg-config
+    local tmp
+    tmp=$(mktemp -d)
+    curl -fsSL "https://github.com/tmux/tmux/releases/download/${version}/tmux-${version}.tar.gz" \
+        | tar -xz -C "${tmp}"
+    (cd "${tmp}/tmux-${version}" && ./configure && make && sudo make install)
+    rm -rf "${tmp}"
+    success "tmux $(tmux -V) built and installed"
+}
+
 if ! command -v tmux &>/dev/null; then
     info "tmux not found, installing..."
     if command -v apt-get &>/dev/null; then
@@ -62,8 +84,20 @@ if ! command -v tmux &>/dev/null; then
     else
         warn "Cannot install tmux: no supported package manager found. Install it manually."
     fi
-else
-    success "tmux already installed ($(tmux -V))"
+fi
+
+if command -v tmux &>/dev/null; then
+    if tmux_version_ok; then
+        success "tmux $(tmux -V) installed"
+    else
+        warn "tmux $(tmux -V) is below ${TMUX_MIN_VERSION} — the status bar theme requires 3.4+."
+        if command -v apt-get &>/dev/null; then
+            info "Attempting to build tmux ${TMUX_MIN_VERSION}+ from source..."
+            build_tmux_from_source
+        else
+            warn "Please upgrade tmux to ${TMUX_MIN_VERSION}+ manually for full theme support."
+        fi
+    fi
 fi
 
 # ── 4. tmux.conf ──────────────────────────────────────────────────────────────
