@@ -112,12 +112,13 @@ if command -v git &>/dev/null; then
     fi
 
     # armando-rios/tmux status bar theme
-    if [[ -d "${PLUGINS_DIR}/armando-rios/tmux" ]]; then
+    # TPM derives the install directory from the repo name only (after last /)
+    # so armando-rios/tmux installs to ~/.tmux/plugins/tmux/
+    if [[ -d "${PLUGINS_DIR}/tmux" ]]; then
         success "armando-rios/tmux already installed"
     else
         info "Installing armando-rios/tmux..."
-        mkdir -p "${PLUGINS_DIR}/armando-rios"
-        git clone https://github.com/armando-rios/tmux "${PLUGINS_DIR}/armando-rios/tmux"
+        git clone https://github.com/armando-rios/tmux "${PLUGINS_DIR}/tmux"
         success "armando-rios/tmux installed"
     fi
 else
