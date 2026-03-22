@@ -190,12 +190,22 @@ if command -v fish &>/dev/null; then
     fi
 fi
 
-# bash (for remote servers that don't have fish)
+# bash (for remote servers that don't have fish, and WSL Debian default shell)
 BASHRC="${HOME}/.bashrc"
-if [[ -f "${BASHRC}" ]] && grep -q "oh-my-posh" "${BASHRC}"; then
+PATH_LINE='export PATH="$HOME/.local/bin:$PATH"'
+
+# Ensure ~/.local/bin is in PATH so oh-my-posh can be found when .bashrc is sourced.
+# On Debian/Ubuntu this is normally added by ~/.profile, but that only runs for
+# login shells — interactive WSL sessions skip it.
+if ! grep -qF '.local/bin' "${BASHRC}" 2>/dev/null; then
+    echo "${PATH_LINE}" >> "${BASHRC}"
+    success "~/.local/bin added to PATH in .bashrc"
+fi
+
+if grep -q "oh-my-posh" "${BASHRC}" 2>/dev/null; then
     sed -i "s|.*oh-my-posh.*|${OMP_BASH_LINE}|" "${BASHRC}"
     success "oh-my-posh bash init updated in .bashrc"
-elif [[ -f "${BASHRC}" ]]; then
+else
     echo "${OMP_BASH_LINE}" >> "${BASHRC}"
     success "oh-my-posh bash init added to .bashrc"
 fi
