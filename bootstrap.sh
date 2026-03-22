@@ -10,6 +10,9 @@
 #   3. Installs tmux if missing
 #   4. Writes tmux.conf (backs up any existing config first)
 #   5. Installs TPM (tmux plugin manager) if missing
+#   6. Installs oh-my-posh if missing
+#   7. Deploys the atomic.omp.json theme
+#   8. Configures fish and/or bash to use oh-my-posh
 
 set -euo pipefail
 
@@ -105,7 +108,77 @@ if [[ -d "${TPM_DIR}" ]]; then
     success "tmux plugins installed"
 fi
 
+# ── 6. oh-my-posh binary ──────────────────────────────────────────────────────
+
+OMP_BIN_DIR="${HOME}/.local/bin"
+OMP_THEME_DIR="${HOME}/.config/omp"
+OMP_THEME="${OMP_THEME_DIR}/atomic.omp.json"
+
+if ! command -v oh-my-posh &>/dev/null; then
+    info "oh-my-posh not found, installing..."
+    mkdir -p "${OMP_BIN_DIR}"
+    if curl -fsSL https://ohmyposh.dev/install.sh | bash -s -- -d "${OMP_BIN_DIR}" 2>&1; then
+        success "oh-my-posh installed to ${OMP_BIN_DIR}"
+        export PATH="${OMP_BIN_DIR}:${PATH}"
+    else
+        warn "oh-my-posh install failed. Install manually: https://ohmyposh.dev/docs/installation/linux"
+    fi
+else
+    success "oh-my-posh already installed ($(oh-my-posh version 2>/dev/null || echo 'unknown version'))"
+fi
+
+# ── 7. oh-my-posh theme ───────────────────────────────────────────────────────
+
+mkdir -p "${OMP_THEME_DIR}"
+REMOTE_THEME=$(curl -fsSL "${BASE_URL}/atomic.omp.json")
+
+if [[ -f "${OMP_THEME}" ]]; then
+    LOCAL_THEME=$(cat "${OMP_THEME}")
+    if [[ "${REMOTE_THEME}" == "${LOCAL_THEME}" ]]; then
+        success "oh-my-posh theme already up to date"
+    else
+        BACKUP="${OMP_THEME}.bak.$(date +%Y%m%d%H%M%S)"
+        cp "${OMP_THEME}" "${BACKUP}"
+        warn "Existing theme backed up to ${BACKUP}"
+        echo "${REMOTE_THEME}" > "${OMP_THEME}"
+        success "oh-my-posh theme updated"
+    fi
+else
+    echo "${REMOTE_THEME}" > "${OMP_THEME}"
+    success "oh-my-posh theme installed to ${OMP_THEME}"
+fi
+
+# ── 8. Shell configuration ────────────────────────────────────────────────────
+
+OMP_FISH_LINE='oh-my-posh init fish --config ~/.config/omp/atomic.omp.json | source'
+OMP_BASH_LINE='eval "$(oh-my-posh init bash --config ~/.config/omp/atomic.omp.json)"'
+
+# fish
+if command -v fish &>/dev/null; then
+    FISH_CONFIG="${HOME}/.config/fish/config.fish"
+    mkdir -p "${HOME}/.config/fish"
+    if [[ -f "${FISH_CONFIG}" ]] && grep -q "oh-my-posh" "${FISH_CONFIG}"; then
+        # Replace existing oh-my-posh init line in place
+        sed -i "s|.*oh-my-posh.*|${OMP_FISH_LINE}|" "${FISH_CONFIG}"
+        success "oh-my-posh fish init updated in config.fish"
+    else
+        echo "${OMP_FISH_LINE}" >> "${FISH_CONFIG}"
+        success "oh-my-posh fish init added to config.fish"
+    fi
+fi
+
+# bash (for remote servers that don't have fish)
+BASHRC="${HOME}/.bashrc"
+if [[ -f "${BASHRC}" ]] && grep -q "oh-my-posh" "${BASHRC}"; then
+    sed -i "s|.*oh-my-posh.*|${OMP_BASH_LINE}|" "${BASHRC}"
+    success "oh-my-posh bash init updated in .bashrc"
+elif [[ -f "${BASHRC}" ]]; then
+    echo "${OMP_BASH_LINE}" >> "${BASHRC}"
+    success "oh-my-posh bash init added to .bashrc"
+fi
+
 # ── Done ──────────────────────────────────────────────────────────────────────
 
 echo ""
 echo "[bootstrap] Done. If tmux is already running, reload config with: tmux source ~/.tmux.conf"
+echo "[bootstrap] Reload your shell to activate oh-my-posh (exec \$SHELL or start a new session)"
