@@ -7,14 +7,15 @@
 # What it does:
 #   1. Imports the GPG public key
 #   2. Adds the SSH public key to ~/.ssh/authorized_keys (skips if already present)
-#   3. Installs tmux if missing; prompts to build 3.6 from source if version < 3.4
-#   4. Writes tmux.conf (backs up any existing config first)
-#   5. Installs TPM and tmux plugins directly via git (tpm, tmux-sensible, armando-rios/tmux)
-#   6. Installs unzip if missing (required by oh-my-posh installer)
-#   7. Installs oh-my-posh if missing
-#   8. Deploys the atomic.omp.json theme
-#   9. Configures fish and/or bash to use oh-my-posh
-#  10. Configures GPG agent for SSH auth and auto-launches it
+#   3. Deploys YubiKey FIDO2 SSH stub files (homekey_sk, backupkey_sk) to ~/.ssh/
+#   4. Installs tmux if missing; prompts to build 3.6 from source if version < 3.4
+#   5. Writes tmux.conf (backs up any existing config first)
+#   6. Installs TPM and tmux plugins directly via git (tpm, tmux-sensible, armando-rios/tmux)
+#   7. Installs unzip if missing (required by oh-my-posh installer)
+#   8. Installs oh-my-posh if missing
+#   9. Deploys the atomic.omp.json theme
+#  10. Configures fish and/or bash to use oh-my-posh
+#  11. Configures GPG agent for SSH auth and auto-launches it
 
 set -euo pipefail
 
@@ -48,7 +49,43 @@ else
     success "SSH key added to authorized_keys"
 fi
 
-# ── 3. Install tmux ───────────────────────────────────────────────────────────
+# ── 3. YubiKey FIDO2 SSH stub files ──────────────────────────────────────────
+#
+# These are key handles only — no private key material. The actual private key
+# lives on the YubiKey hardware. The stubs are required so SSH knows which
+# credential to request from the attached YubiKey.
+
+info "Deploying YubiKey FIDO2 SSH stub files..."
+mkdir -p ~/.ssh
+chmod 700 ~/.ssh
+
+for SK_FILE in homekey_sk homekey_sk.pub backupkey_sk backupkey_sk.pub; do
+    DEST="${HOME}/.ssh/${SK_FILE}"
+    REMOTE_CONTENT=$(curl -fsSL "${BASE_URL}/${SK_FILE}")
+    if [[ -f "${DEST}" ]]; then
+        if [[ "$(cat "${DEST}")" == "${REMOTE_CONTENT}" ]]; then
+            success "${SK_FILE} already up to date"
+        else
+            cp "${DEST}" "${DEST}.bak.$(date +%Y%m%d%H%M%S)"
+            warn "Existing ${SK_FILE} backed up"
+            echo "${REMOTE_CONTENT}" > "${DEST}"
+            success "${SK_FILE} updated"
+        fi
+    else
+        echo "${REMOTE_CONTENT}" > "${DEST}"
+        success "${SK_FILE} deployed to ~/.ssh/"
+    fi
+    # Pub files are 644, private stubs are 600
+    if [[ "${SK_FILE}" == *.pub ]]; then
+        chmod 644 "${DEST}"
+    else
+        chmod 600 "${DEST}"
+    fi
+done
+
+info "YubiKey stub files deployed. Plug in your YubiKey to use them for SSH auth."
+
+# ── 4. Install tmux ───────────────────────────────────────────────────────────
 
 TMUX_MIN_VERSION="3.4"
 TMUX_BUILD_VERSION="3.6"
@@ -106,7 +143,7 @@ if command -v tmux &>/dev/null; then
     fi
 fi
 
-# ── 4. tmux.conf ──────────────────────────────────────────────────────────────
+# ── 5. tmux.conf ──────────────────────────────────────────────────────────────
 
 TMUX_CONF="${HOME}/.tmux.conf"
 
@@ -127,7 +164,7 @@ else
     success "tmux.conf installed"
 fi
 
-# ── 5. TPM and tmux plugins ───────────────────────────────────────────────────
+# ── 6. TPM and tmux plugins ───────────────────────────────────────────────────
 
 PLUGINS_DIR="${HOME}/.tmux/plugins"
 TPM_DIR="${PLUGINS_DIR}/tpm"
@@ -165,7 +202,7 @@ else
     warn "git not found — tmux plugins not installed. Install git and re-run this script."
 fi
 
-# ── 6. unzip (required by oh-my-posh installer) ──────────────────────────────
+# ── 7. unzip (required by oh-my-posh installer) ──────────────────────────────
 
 if ! command -v unzip &>/dev/null; then
     info "unzip not found, installing..."
@@ -186,7 +223,7 @@ else
     success "unzip already present"
 fi
 
-# ── 7. oh-my-posh binary ──────────────────────────────────────────────────────
+# ── 8. oh-my-posh binary ──────────────────────────────────────────────────────
 
 
 OMP_BIN_DIR="${HOME}/.local/bin"
@@ -206,7 +243,7 @@ else
     success "oh-my-posh already installed ($(oh-my-posh version 2>/dev/null || echo 'unknown version'))"
 fi
 
-# ── 8. oh-my-posh theme ───────────────────────────────────────────────────────
+# ── 9. oh-my-posh theme ───────────────────────────────────────────────────────
 
 mkdir -p "${OMP_THEME_DIR}"
 REMOTE_THEME=$(curl -fsSL "${BASE_URL}/atomic.omp.json")
@@ -227,7 +264,7 @@ else
     success "oh-my-posh theme installed to ${OMP_THEME}"
 fi
 
-# ── 9. Shell configuration ────────────────────────────────────────────────────
+# ── 10. Shell configuration ────────────────────────────────────────────────────
 
 OMP_FISH_LINE='oh-my-posh init fish --config ~/.config/omp/atomic.omp.json | source'
 OMP_BASH_LINE='eval "$(oh-my-posh init bash --config ~/.config/omp/atomic.omp.json)"'
@@ -262,7 +299,7 @@ fi
 echo "${OMP_BASH_LINE}" >> "${BASHRC}"
 success "oh-my-posh bash init added to .bashrc"
 
-# ── 10. GPG agent (SSH support) ───────────────────────────────────────────────
+# ── 11. GPG agent (SSH support) ───────────────────────────────────────────────
 
 # Install pinentry-curses if missing (required for GPG agent in terminal sessions)
 if ! command -v pinentry-curses &>/dev/null; then
