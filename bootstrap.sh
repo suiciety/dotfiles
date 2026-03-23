@@ -7,7 +7,7 @@
 # What it does:
 #   1. Imports the GPG public key
 #   2. Adds the SSH public key to ~/.ssh/authorized_keys (skips if already present)
-#   3. Deploys YubiKey FIDO2 SSH stub files (homekey_sk, backupkey_sk) to ~/.ssh/
+#   3. Deploys YubiKey FIDO2 public key files (.pub only) to ~/.ssh/; warns if private stubs are missing
 #   4. Installs tmux if missing; prompts to build 3.6 from source if version < 3.4
 #   5. Writes tmux.conf (backs up any existing config first)
 #   6. Installs TPM and tmux plugins directly via git (tpm, tmux-sensible, armando-rios/tmux)
@@ -55,35 +55,38 @@ fi
 # lives on the YubiKey hardware. The stubs are required so SSH knows which
 # credential to request from the attached YubiKey.
 
-info "Deploying YubiKey FIDO2 SSH stub files..."
+info "Deploying YubiKey FIDO2 SSH public keys..."
 mkdir -p ~/.ssh
 chmod 700 ~/.ssh
 
-for SK_FILE in homekey_sk homekey_sk.pub backupkey_sk backupkey_sk.pub; do
-    DEST="${HOME}/.ssh/${SK_FILE}"
-    REMOTE_CONTENT=$(curl -fsSL "${BASE_URL}/${SK_FILE}")
+for SK_PUB in homekey_sk.pub backupkey_sk.pub; do
+    DEST="${HOME}/.ssh/${SK_PUB}"
+    REMOTE_CONTENT=$(curl -fsSL "${BASE_URL}/${SK_PUB}")
     if [[ -f "${DEST}" ]]; then
         if [[ "$(cat "${DEST}")" == "${REMOTE_CONTENT}" ]]; then
-            success "${SK_FILE} already up to date"
+            success "${SK_PUB} already up to date"
         else
             cp "${DEST}" "${DEST}.bak.$(date +%Y%m%d%H%M%S)"
-            warn "Existing ${SK_FILE} backed up"
+            warn "Existing ${SK_PUB} backed up"
             echo "${REMOTE_CONTENT}" > "${DEST}"
-            success "${SK_FILE} updated"
+            success "${SK_PUB} updated"
         fi
     else
         echo "${REMOTE_CONTENT}" > "${DEST}"
-        success "${SK_FILE} deployed to ~/.ssh/"
+        success "${SK_PUB} deployed to ~/.ssh/"
     fi
-    # Pub files are 644, private stubs are 600
-    if [[ "${SK_FILE}" == *.pub ]]; then
-        chmod 644 "${DEST}"
-    else
-        chmod 600 "${DEST}"
-    fi
+    chmod 644 "${DEST}"
 done
 
-info "YubiKey stub files deployed. Plug in your YubiKey to use them for SSH auth."
+# Private stubs (homekey_sk, backupkey_sk) are not stored in the public repo.
+# Export them from your YubiKey on any machine where it is physically present:
+#   ssh-keygen -K   (run from ~/.ssh/ — writes homekey_sk and backupkey_sk)
+if [[ ! -f "${HOME}/.ssh/homekey_sk" ]]; then
+    warn "YubiKey SSH stubs not found in ~/.ssh/"
+    warn "Plug in your YubiKey and run: cd ~/.ssh && ssh-keygen -K"
+else
+    success "YubiKey SSH stubs already present"
+fi
 
 # ── 4. Install tmux ───────────────────────────────────────────────────────────
 

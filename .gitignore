@@ -1,0 +1,4 @@
+# YubiKey FIDO2 private stubs — no secret material but flagged by secret scanners.
+# Export these manually on each machine with: ssh-keygen -K
+homekey_sk
+backupkey_sk
