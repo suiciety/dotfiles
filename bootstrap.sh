@@ -236,14 +236,12 @@ OMP_BASH_LINE='eval "$(oh-my-posh init bash --config ~/.config/omp/atomic.omp.js
 if command -v fish &>/dev/null; then
     FISH_CONFIG="${HOME}/.config/fish/config.fish"
     mkdir -p "${HOME}/.config/fish"
-    if [[ -f "${FISH_CONFIG}" ]] && grep -q "oh-my-posh" "${FISH_CONFIG}"; then
-        # Replace existing oh-my-posh init line in place
-        sed -i "s|.*oh-my-posh.*|${OMP_FISH_LINE}|" "${FISH_CONFIG}"
+    if grep -q "oh-my-posh" "${FISH_CONFIG}" 2>/dev/null; then
+        grep -v "oh-my-posh" "${FISH_CONFIG}" > "${FISH_CONFIG}.tmp" && mv "${FISH_CONFIG}.tmp" "${FISH_CONFIG}"
         success "oh-my-posh fish init updated in config.fish"
-    else
-        echo "${OMP_FISH_LINE}" >> "${FISH_CONFIG}"
-        success "oh-my-posh fish init added to config.fish"
     fi
+    echo "${OMP_FISH_LINE}" >> "${FISH_CONFIG}"
+    success "oh-my-posh fish init added to config.fish"
 fi
 
 # bash (for remote servers that don't have fish, and WSL Debian default shell)
@@ -259,12 +257,10 @@ if ! grep -qF '.local/bin' "${BASHRC}" 2>/dev/null; then
 fi
 
 if grep -q "oh-my-posh" "${BASHRC}" 2>/dev/null; then
-    sed -i "s|.*oh-my-posh.*|${OMP_BASH_LINE}|" "${BASHRC}"
-    success "oh-my-posh bash init updated in .bashrc"
-else
-    echo "${OMP_BASH_LINE}" >> "${BASHRC}"
-    success "oh-my-posh bash init added to .bashrc"
+    grep -v "oh-my-posh" "${BASHRC}" > "${BASHRC}.tmp" && mv "${BASHRC}.tmp" "${BASHRC}"
 fi
+echo "${OMP_BASH_LINE}" >> "${BASHRC}"
+success "oh-my-posh bash init added to .bashrc"
 
 # ── 10. GPG agent (SSH support) ───────────────────────────────────────────────
 
