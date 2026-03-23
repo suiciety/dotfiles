@@ -7,7 +7,8 @@
 # What it does:
 #   1. Imports the GPG public key
 #   2. Adds the SSH public key to ~/.ssh/authorized_keys (skips if already present)
-#   3. Deploys YubiKey FIDO2 public key files (.pub only) to ~/.ssh/; warns if private stubs are missing
+#   3. Checks FIDO2 prerequisites (OpenSSH 8.2+, libfido2), deploys .pub files, prompts to
+#      insert each YubiKey in sequence and exports private stubs via ssh-keygen -K
 #   4. Installs tmux if missing; prompts to build 3.6 from source if version < 3.4
 #   5. Writes tmux.conf (backs up any existing config first)
 #   6. Installs TPM and tmux plugins directly via git (tpm, tmux-sensible, armando-rios/tmux)
@@ -49,15 +50,54 @@ else
     success "SSH key added to authorized_keys"
 fi
 
-# ── 3. YubiKey FIDO2 SSH stub files ──────────────────────────────────────────
+# ── 3. YubiKey FIDO2 SSH stub export ─────────────────────────────────────────
 #
-# These are key handles only — no private key material. The actual private key
-# lives on the YubiKey hardware. The stubs are required so SSH knows which
-# credential to request from the attached YubiKey.
+# Checks prerequisites, deploys .pub files from the repo, then prompts to
+# insert each YubiKey in sequence and runs ssh-keygen -K to export the private
+# stubs locally. Stubs are not stored in the public repo.
 
-info "Deploying YubiKey FIDO2 SSH public keys..."
 mkdir -p ~/.ssh
 chmod 700 ~/.ssh
+
+# -- Prerequisite checks ------------------------------------------------------
+
+FIDO2_READY=true
+
+# OpenSSH 8.2+ required for FIDO2
+SSH_VER=$(ssh -V 2>&1 | grep -oP 'OpenSSH_\K[0-9]+\.[0-9]+' || echo "0.0")
+if awk -v v="${SSH_VER}" 'BEGIN { exit (v+0 >= 8.2) ? 0 : 1 }'; then
+    success "OpenSSH ${SSH_VER} supports FIDO2"
+else
+    warn "OpenSSH ${SSH_VER} detected — FIDO2 requires 8.2+. Upgrade OpenSSH first."
+    FIDO2_READY=false
+fi
+
+# libfido2 — install if missing
+libfido2_present() {
+    ldconfig -p 2>/dev/null | grep -q libfido2 || \
+    ls /usr/lib*/libfido2*.so* /usr/local/lib*/libfido2*.so* 2>/dev/null | grep -q .
+}
+
+if libfido2_present; then
+    success "libfido2 present"
+else
+    info "libfido2 not found — installing..."
+    if command -v pacman &>/dev/null; then
+        sudo pacman -S --noconfirm libfido2
+    elif command -v apt-get &>/dev/null; then
+        sudo apt-get install -y libfido2-1
+    elif command -v dnf &>/dev/null; then
+        sudo dnf install -y libfido2
+    elif command -v brew &>/dev/null; then
+        brew install libfido2
+    else
+        warn "Cannot install libfido2: no supported package manager found. Install it manually."
+        FIDO2_READY=false
+    fi
+    libfido2_present && success "libfido2 installed" || { warn "libfido2 install failed"; FIDO2_READY=false; }
+fi
+
+# -- Deploy .pub files from repo ----------------------------------------------
 
 for SK_PUB in homekey_sk.pub backupkey_sk.pub; do
     DEST="${HOME}/.ssh/${SK_PUB}"
@@ -78,14 +118,70 @@ for SK_PUB in homekey_sk.pub backupkey_sk.pub; do
     chmod 644 "${DEST}"
 done
 
-# Private stubs (homekey_sk, backupkey_sk) are not stored in the public repo.
-# Export them from your YubiKey on any machine where it is physically present:
-#   ssh-keygen -K   (run from ~/.ssh/ — writes homekey_sk and backupkey_sk)
-if [[ ! -f "${HOME}/.ssh/homekey_sk" ]]; then
-    warn "YubiKey SSH stubs not found in ~/.ssh/"
-    warn "Plug in your YubiKey and run: cd ~/.ssh && ssh-keygen -K"
+# -- Export private stubs from YubiKeys ---------------------------------------
+
+export_yubikey_stub() {
+    local key_name="$1"
+    local dest_priv="${HOME}/.ssh/${key_name}"
+    local dest_pub="${HOME}/.ssh/${key_name}.pub"
+
+    if [[ -f "${dest_priv}" && -f "${dest_pub}" ]]; then
+        success "${key_name} stub already present — skipping"
+        return 0
+    fi
+
+    echo ""
+    printf "[bootstrap] ? Insert your YubiKey for '%s' then press Enter (or 's' to skip): " "${key_name}"
+    read -r YUBIKEY_RESPONSE </dev/tty
+
+    if [[ "${YUBIKEY_RESPONSE}" =~ ^[Ss]$ ]]; then
+        warn "Skipping ${key_name} — run 'cd ~/.ssh && ssh-keygen -K' manually when ready"
+        return 0
+    fi
+
+    local tmp
+    tmp=$(mktemp -d)
+    info "Exporting resident keys from YubiKey (touch the key if it flashes)..."
+
+    if ! (cd "${tmp}" && ssh-keygen -K 2>/dev/null); then
+        warn "ssh-keygen -K failed — ensure YubiKey is fully inserted and try again"
+        warn "Manual fallback: cd ~/.ssh && ssh-keygen -K && mv id_*_sk_rk ${key_name} && mv id_*_sk_rk.pub ${key_name}.pub"
+        rm -rf "${tmp}"
+        return 1
+    fi
+
+    # Collect exported private stubs (exclude .pub files)
+    local priv_keys=()
+    for f in "${tmp}"/id_*_sk_rk*; do
+        [[ -f "${f}" && "${f}" != *.pub ]] && priv_keys+=("${f}")
+    done
+
+    local count=${#priv_keys[@]}
+    if [[ ${count} -eq 0 ]]; then
+        warn "No resident keys found on this YubiKey — ensure key was generated with -O resident"
+        rm -rf "${tmp}"
+        return 1
+    fi
+
+    if [[ ${count} -gt 1 ]]; then
+        warn "${count} resident keys found — using first key for ${key_name}"
+        warn "Other exported keys left in ${tmp} — review and move manually if needed"
+    fi
+
+    mv "${priv_keys[0]}" "${dest_priv}"
+    mv "${priv_keys[0]}.pub" "${dest_pub}"
+    chmod 600 "${dest_priv}"
+    chmod 644 "${dest_pub}"
+    rm -rf "${tmp}"
+    success "${key_name} stub exported to ~/.ssh/"
+}
+
+if [[ "${FIDO2_READY}" == true ]]; then
+    export_yubikey_stub "homekey_sk"
+    export_yubikey_stub "backupkey_sk"
 else
-    success "YubiKey SSH stubs already present"
+    warn "Skipping YubiKey stub export — fix prerequisites above first"
+    warn "Manual fallback: cd ~/.ssh && ssh-keygen -K"
 fi
 
 # ── 4. Install tmux ───────────────────────────────────────────────────────────
