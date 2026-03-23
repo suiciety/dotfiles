@@ -14,6 +14,7 @@
 #   7. Installs oh-my-posh if missing
 #   8. Deploys the atomic.omp.json theme
 #   9. Configures fish and/or bash to use oh-my-posh
+#  10. Configures GPG agent for SSH auth and auto-launches it
 
 set -euo pipefail
 
@@ -263,6 +264,73 @@ if grep -q "oh-my-posh" "${BASHRC}" 2>/dev/null; then
 else
     echo "${OMP_BASH_LINE}" >> "${BASHRC}"
     success "oh-my-posh bash init added to .bashrc"
+fi
+
+# ── 10. GPG agent (SSH support) ───────────────────────────────────────────────
+
+# Install pinentry-curses if missing (required for GPG agent in terminal sessions)
+if ! command -v pinentry-curses &>/dev/null; then
+    info "pinentry-curses not found, installing..."
+    if command -v apt-get &>/dev/null; then
+        sudo apt-get install -y pinentry-curses
+    elif command -v pacman &>/dev/null; then
+        sudo pacman -S --noconfirm pinentry
+    elif command -v dnf &>/dev/null; then
+        sudo dnf install -y pinentry
+    elif command -v brew &>/dev/null; then
+        brew install pinentry
+    else
+        warn "Cannot install pinentry-curses: no supported package manager found."
+    fi
+fi
+
+# Write gpg-agent.conf enabling SSH support
+GNUPG_DIR="${HOME}/.gnupg"
+GPG_AGENT_CONF="${GNUPG_DIR}/gpg-agent.conf"
+mkdir -p "${GNUPG_DIR}"
+chmod 700 "${GNUPG_DIR}"
+
+PINENTRY_PATH=$(command -v pinentry-curses 2>/dev/null || command -v pinentry 2>/dev/null || echo "")
+
+if [[ -f "${GPG_AGENT_CONF}" ]] && grep -q "enable-ssh-support" "${GPG_AGENT_CONF}"; then
+    success "gpg-agent.conf already has SSH support enabled"
+else
+    {
+        echo "enable-ssh-support"
+        [[ -n "${PINENTRY_PATH}" ]] && echo "pinentry-program ${PINENTRY_PATH}"
+    } >> "${GPG_AGENT_CONF}"
+    success "gpg-agent.conf updated with SSH support"
+fi
+
+# Shell lines for GPG agent SSH socket and auto-launch
+GPG_FISH_LINES='set -x SSH_AUTH_SOCK (gpgconf --list-dirs agent-ssh-socket)
+gpgconf --launch gpg-agent'
+GPG_BASH_LINES='export SSH_AUTH_SOCK=$(gpgconf --list-dirs agent-ssh-socket)
+gpgconf --launch gpg-agent'
+
+# fish
+if command -v fish &>/dev/null; then
+    FISH_CONFIG="${HOME}/.config/fish/config.fish"
+    if grep -q "gpg-agent" "${FISH_CONFIG}" 2>/dev/null; then
+        success "GPG agent already configured in config.fish"
+    else
+        echo "${GPG_FISH_LINES}" >> "${FISH_CONFIG}"
+        success "GPG agent SSH config added to config.fish"
+    fi
+fi
+
+# bash
+if grep -q "gpg-agent" "${BASHRC}" 2>/dev/null; then
+    success "GPG agent already configured in .bashrc"
+else
+    echo "${GPG_BASH_LINES}" >> "${BASHRC}"
+    success "GPG agent SSH config added to .bashrc"
+fi
+
+# Reload the agent now so SSH_AUTH_SOCK is available in this session
+if command -v gpgconf &>/dev/null; then
+    gpgconf --launch gpg-agent
+    success "GPG agent launched"
 fi
 
 # ── Done ──────────────────────────────────────────────────────────────────────
