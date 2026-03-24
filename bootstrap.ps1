@@ -178,28 +178,34 @@ if ($sshFido2Ready) {
     Warn "Manual fallback: cd `$env:USERPROFILE\.ssh; ssh-keygen -K"
 }
 
-# ── 4. SSH config — SecurityKeyProvider ──────────────────────────────────────
+# ── 4. SSH config — FIDO2 settings ───────────────────────────────────────────
 
 Info "Configuring SSH client for FIDO2..."
 
 $sshConfig = Join-Path $SSH_DIR 'config'
-$fido2Line  = 'SecurityKeyProvider internal'
+$fido2Block = @"
+Host *
+    SecurityKeyProvider internal
+    PreferredAuthentications publickey,password
+    IdentityFile ~/.ssh/homekey_sk
+    IdentityFile ~/.ssh/backupkey_sk
+    IdentitiesOnly yes
+"@
 
 if (Test-Path $sshConfig) {
     $content = Get-Content $sshConfig -Raw
     if ($content -match 'SecurityKeyProvider') {
-        Success "SSH config already has SecurityKeyProvider set"
+        Success "SSH config already has FIDO2 settings"
     } else {
-        # Prepend to existing config
         $backup = "$sshConfig.bak.$(Get-Date -Format 'yyyyMMddHHmmss')"
         Copy-Item $sshConfig $backup
         Warn "Existing SSH config backed up to $backup"
-        Set-Content $sshConfig -Value "Host *`n    $fido2Line`n`n$content"
-        Success "SSH config updated with SecurityKeyProvider"
+        Set-Content $sshConfig -Value ($fido2Block + "`n" + $content)
+        Success "SSH config updated with FIDO2 settings"
     }
 } else {
-    Set-Content $sshConfig -Value "Host *`n    $fido2Line`n"
-    Success "SSH config created with SecurityKeyProvider"
+    Set-Content $sshConfig -Value $fido2Block
+    Success "SSH config created with FIDO2 settings"
 }
 
 # ── 5. oh-my-posh ─────────────────────────────────────────────────────────────

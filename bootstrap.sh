@@ -16,7 +16,7 @@
 #   8. Installs oh-my-posh if missing
 #   9. Deploys the atomic.omp.json theme
 #  10. Configures fish and/or bash to use oh-my-posh
-#  11. Configures GPG agent for SSH auth and auto-launches it
+#  11. Configures GPG agent for GPG operations only (not SSH); removes any old SSH_AUTH_SOCK lines
 
 set -euo pipefail
 
@@ -182,6 +182,32 @@ if [[ "${FIDO2_READY}" == true ]]; then
 else
     warn "Skipping YubiKey stub export — fix prerequisites above first"
     warn "Manual fallback: cd ~/.ssh && ssh-keygen -K"
+fi
+
+# -- SSH client config --------------------------------------------------------
+
+SSH_CONFIG="${HOME}/.ssh/config"
+FIDO2_CONFIG="Host *
+    SecurityKeyProvider internal
+    PreferredAuthentications publickey,password
+    IdentityFile ~/.ssh/homekey_sk
+    IdentityFile ~/.ssh/backupkey_sk
+    IdentitiesOnly yes"
+
+if [[ -f "${SSH_CONFIG}" ]]; then
+    if grep -q "SecurityKeyProvider" "${SSH_CONFIG}"; then
+        success "SSH config already has FIDO2 settings"
+    else
+        BACKUP="${SSH_CONFIG}.bak.$(date +%Y%m%d%H%M%S)"
+        cp "${SSH_CONFIG}" "${BACKUP}"
+        warn "Existing SSH config backed up to ${BACKUP}"
+        printf '%s\n\n' "${FIDO2_CONFIG}" | cat - "${SSH_CONFIG}" > "${SSH_CONFIG}.tmp" && mv "${SSH_CONFIG}.tmp" "${SSH_CONFIG}"
+        success "SSH config updated with FIDO2 settings"
+    fi
+else
+    echo "${FIDO2_CONFIG}" > "${SSH_CONFIG}"
+    chmod 600 "${SSH_CONFIG}"
+    success "SSH config created with FIDO2 settings"
 fi
 
 # ── 4. Install tmux ───────────────────────────────────────────────────────────
@@ -398,7 +424,12 @@ fi
 echo "${OMP_BASH_LINE}" >> "${BASHRC}"
 success "oh-my-posh bash init added to .bashrc"
 
-# ── 11. GPG agent (SSH support) ───────────────────────────────────────────────
+# ── 11. GPG agent (signing/encryption only) ───────────────────────────────────
+#
+# GPG agent is configured for GPG operations only (signing, encryption).
+# SSH_AUTH_SOCK is intentionally NOT pointed at the GPG agent — FIDO2 keys
+# are used directly via the SSH client config (IdentityFile + IdentitiesOnly)
+# without going through an agent.
 
 # Install pinentry-curses if missing (required for GPG agent in terminal sessions)
 if ! command -v pinentry-curses &>/dev/null; then
@@ -425,44 +456,35 @@ chmod 700 "${GNUPG_DIR}"
 PINENTRY_PATH=$(command -v pinentry-curses 2>/dev/null || command -v pinentry 2>/dev/null || echo "")
 
 if [[ -f "${GPG_AGENT_CONF}" ]] && grep -q "enable-ssh-support" "${GPG_AGENT_CONF}"; then
-    success "gpg-agent.conf already has SSH support enabled"
+    warn "gpg-agent.conf has enable-ssh-support — removing to avoid conflict with FIDO2 SSH"
+    sed -i '/enable-ssh-support/d' "${GPG_AGENT_CONF}"
+    success "Removed enable-ssh-support from gpg-agent.conf"
 else
-    {
-        echo "enable-ssh-support"
-        [[ -n "${PINENTRY_PATH}" ]] && echo "pinentry-program ${PINENTRY_PATH}"
-    } >> "${GPG_AGENT_CONF}"
-    success "gpg-agent.conf updated with SSH support"
+    success "gpg-agent.conf does not have SSH support enabled (correct)"
 fi
 
-# Shell lines for GPG agent SSH socket and auto-launch
-GPG_FISH_LINES='set -x SSH_AUTH_SOCK (gpgconf --list-dirs agent-ssh-socket)
-gpgconf --launch gpg-agent'
-GPG_BASH_LINES='export SSH_AUTH_SOCK=$(gpgconf --list-dirs agent-ssh-socket)
-gpgconf --launch gpg-agent'
-
-# fish
-if command -v fish &>/dev/null; then
-    FISH_CONFIG="${HOME}/.config/fish/config.fish"
-    if grep -q "gpg-agent" "${FISH_CONFIG}" 2>/dev/null; then
-        success "GPG agent already configured in config.fish"
+if [[ -n "${PINENTRY_PATH}" ]]; then
+    if grep -q "pinentry-program" "${GPG_AGENT_CONF}" 2>/dev/null; then
+        success "pinentry-program already set in gpg-agent.conf"
     else
-        echo "${GPG_FISH_LINES}" >> "${FISH_CONFIG}"
-        success "GPG agent SSH config added to config.fish"
+        echo "pinentry-program ${PINENTRY_PATH}" >> "${GPG_AGENT_CONF}"
+        success "pinentry-program set in gpg-agent.conf"
     fi
 fi
 
-# bash
-if grep -q "gpg-agent" "${BASHRC}" 2>/dev/null; then
-    success "GPG agent already configured in .bashrc"
-else
-    echo "${GPG_BASH_LINES}" >> "${BASHRC}"
-    success "GPG agent SSH config added to .bashrc"
-fi
+# Remove any GPG agent SSH socket lines added by older versions of this script
+for SHELL_CONFIG in "${HOME}/.config/fish/config.fish" "${HOME}/.bashrc"; do
+    if [[ -f "${SHELL_CONFIG}" ]] && grep -qE "gpg-agent|agent-ssh-socket|SSH_AUTH_SOCK" "${SHELL_CONFIG}"; then
+        grep -vE "gpg-agent|agent-ssh-socket|SSH_AUTH_SOCK" "${SHELL_CONFIG}" > "${SHELL_CONFIG}.tmp" \
+            && mv "${SHELL_CONFIG}.tmp" "${SHELL_CONFIG}"
+        warn "Removed GPG agent SSH lines from ${SHELL_CONFIG} (no longer needed with FIDO2)"
+    fi
+done
 
-# Reload the agent now so SSH_AUTH_SOCK is available in this session
+# Launch GPG agent for GPG operations only (not SSH)
 if command -v gpgconf &>/dev/null; then
     gpgconf --launch gpg-agent
-    success "GPG agent launched"
+    success "GPG agent launched for GPG operations"
 fi
 
 # ── Done ──────────────────────────────────────────────────────────────────────
