@@ -15,7 +15,8 @@
 #   7. Installs unzip if missing (required by oh-my-posh installer)
 #   8. Installs oh-my-posh if missing
 #   9. Deploys the atomic.omp.json theme
-#  10. Deploys config.fish (oh-my-posh + tmux auto-attach + VS Code guard) and configures bash
+#  10. Deploys shell configs: config.fish (fish), shell_common.sh (bash/zsh/POSIX) with VS Code
+#      guard, oh-my-posh prompt, and tmux auto-attach; sources shell_common.sh from rc files
 #  11. Configures GPG agent for GPG operations only (not SSH); removes any old SSH_AUTH_SOCK lines
 
 set -euo pipefail
@@ -26,6 +27,13 @@ GPG_KEY_ID="7190A66213322F4A"
 info()    { echo "[bootstrap] $*"; }
 success() { echo "[bootstrap] ✓ $*"; }
 warn()    { echo "[bootstrap] ! $*"; }
+
+# Portable sed -i: GNU sed (Linux) uses -i; BSD sed (macOS) requires -i ''
+if sed --version 2>/dev/null | grep -q GNU; then
+    sedi() { sed -i "$@"; }
+else
+    sedi() { sed -i '' "$@"; }
+fi
 
 # ── 1. GPG public key ─────────────────────────────────────────────────────────
 
@@ -64,7 +72,8 @@ chmod 700 ~/.ssh
 FIDO2_READY=true
 
 # OpenSSH 8.2+ required for FIDO2
-SSH_VER=$(ssh -V 2>&1 | grep -oP 'OpenSSH_\K[0-9]+\.[0-9]+' || echo "0.0")
+SSH_VER=$(ssh -V 2>&1 | sed -nE 's/.*OpenSSH_([0-9]+\.[0-9]+).*/\1/p')
+[[ -z "${SSH_VER}" ]] && SSH_VER="0.0"
 if awk -v v="${SSH_VER}" 'BEGIN { exit (v+0 >= 8.2) ? 0 : 1 }'; then
     success "OpenSSH ${SSH_VER} supports FIDO2"
 else
@@ -74,8 +83,13 @@ fi
 
 # libfido2 — install if missing
 libfido2_present() {
-    ldconfig -p 2>/dev/null | grep -q libfido2 || \
-    ls /usr/lib*/libfido2*.so* /usr/local/lib*/libfido2*.so* 2>/dev/null | grep -q .
+    if command -v ldconfig &>/dev/null; then
+        ldconfig -p 2>/dev/null | grep -q libfido2
+    else
+        # macOS (no ldconfig): search Homebrew and system paths for dylib
+        find /opt/homebrew /usr/local /usr/lib /usr/lib64 2>/dev/null \
+            -name "libfido2*" | grep -q .
+    fi
 }
 
 if libfido2_present; then
@@ -216,6 +230,13 @@ TMUX_MIN_VERSION="3.4"
 TMUX_BUILD_VERSION="3.6"
 
 tmux_build_from_source() {
+    # macOS: brew always has a recent tmux; build-from-source is a Linux path
+    if command -v brew &>/dev/null; then
+        info "On macOS: upgrading tmux via brew..."
+        brew upgrade tmux 2>/dev/null || brew install tmux
+        success "tmux $(tmux -V) installed via brew"
+        return 0
+    fi
     info "Building tmux ${TMUX_BUILD_VERSION} from source..."
     local tmp
     tmp=$(mktemp -d)
@@ -253,7 +274,7 @@ if ! command -v tmux &>/dev/null; then
 fi
 
 if command -v tmux &>/dev/null; then
-    TMUX_VER=$(tmux -V | grep -oP '[0-9]+\.[0-9]+' | head -1)
+    TMUX_VER=$(tmux -V | sed -E 's/[^0-9]*([0-9]+\.[0-9]+).*/\1/')
     if awk -v v="${TMUX_VER}" -v m="${TMUX_MIN_VERSION}" 'BEGIN { exit (v >= m) ? 0 : 1 }'; then
         success "tmux ${TMUX_VER} meets minimum version requirement (${TMUX_MIN_VERSION}+)"
     else
@@ -390,48 +411,82 @@ else
 fi
 
 # ── 10. Shell configuration ────────────────────────────────────────────────────
+#
+# Deploys a managed file for each shell, then injects a source line into rc files.
+# All files include: VS Code guard, PATH setup, oh-my-posh, tmux auto-attach.
+#
+#   fish          → ~/.config/fish/config.fish  (native fish syntax, from repo)
+#   bash/zsh/etc. → ~/.config/sh/shell_common.sh (POSIX sh, from repo)
+#                   sourced via ~/.bashrc and ~/.zshrc
 
-OMP_BASH_LINE='eval "$(oh-my-posh init bash --config ~/.config/omp/atomic.omp.json)"'
-
-# fish — deploy config.fish from repo (includes VS Code guard, oh-my-posh, tmux auto-attach)
-if command -v fish &>/dev/null; then
-    FISH_CONFIG="${HOME}/.config/fish/config.fish"
-    mkdir -p "${HOME}/.config/fish"
-    REMOTE_FISH=$(curl -fsSL "${BASE_URL}/config.fish")
-    if [[ -f "${FISH_CONFIG}" ]]; then
-        LOCAL_FISH=$(cat "${FISH_CONFIG}")
-        if [[ "${REMOTE_FISH}" == "${LOCAL_FISH}" ]]; then
-            success "config.fish already up to date"
-        else
-            BACKUP="${FISH_CONFIG}.bak.$(date +%Y%m%d%H%M%S)"
-            cp "${FISH_CONFIG}" "${BACKUP}"
-            warn "Existing config.fish backed up to ${BACKUP}"
-            echo "${REMOTE_FISH}" > "${FISH_CONFIG}"
-            success "config.fish updated"
+# Helper: fetch a file from the repo and deploy it, backing up on change
+deploy_managed_file() {
+    local src_url="$1" dest="$2"
+    local remote
+    remote=$(curl -fsSL "${src_url}")
+    mkdir -p "$(dirname "${dest}")"
+    if [[ -f "${dest}" ]]; then
+        if [[ "$(cat "${dest}")" == "${remote}" ]]; then
+            success "${dest##*/} already up to date"
+            return 0
         fi
-    else
-        echo "${REMOTE_FISH}" > "${FISH_CONFIG}"
-        success "config.fish deployed"
+        local backup="${dest}.bak.$(date +%Y%m%d%H%M%S)"
+        cp "${dest}" "${backup}"
+        warn "Existing ${dest##*/} backed up to ${backup}"
     fi
+    echo "${remote}" > "${dest}"
+    success "${dest##*/} deployed"
+}
+
+# Helper: inject a '. shell_common.sh' source line into an rc file.
+# Cleans up any old directly-appended oh-my-posh/tmux lines from prior bootstrap versions.
+SHELL_COMMON="${HOME}/.config/sh/shell_common.sh"
+SHELL_COMMON_MARKER="# bootstrap:shell_common"
+
+inject_source_line() {
+    local rc_file="$1"
+    local source_line=". \"${SHELL_COMMON}\"  ${SHELL_COMMON_MARKER}"
+
+    [[ -f "${rc_file}" ]] || touch "${rc_file}"
+
+    if grep -qF "${SHELL_COMMON_MARKER}" "${rc_file}" 2>/dev/null; then
+        success "${rc_file##*/} already sources shell_common.sh"
+        return 0
+    fi
+
+    # Remove any oh-my-posh/tmux lines appended directly by older bootstrap versions
+    if grep -qE "oh-my-posh|tmux attach|tmux new -s" "${rc_file}" 2>/dev/null; then
+        grep -vE "oh-my-posh|tmux attach|tmux new -s" "${rc_file}" > "${rc_file}.tmp" \
+            && mv "${rc_file}.tmp" "${rc_file}"
+        warn "Removed old bootstrap shell lines from ${rc_file##*/}"
+    fi
+
+    # Remove old PATH_LINE that used to be appended directly
+    if grep -qF '.local/bin' "${rc_file}" 2>/dev/null; then
+        grep -vF '.local/bin' "${rc_file}" > "${rc_file}.tmp" \
+            && mv "${rc_file}.tmp" "${rc_file}"
+    fi
+
+    { echo ""; echo "${source_line}"; } >> "${rc_file}"
+    success "shell_common.sh sourced in ${rc_file##*/}"
+}
+
+# fish — native fish syntax (VS Code guard uses fish 'return', not sh syntax)
+if command -v fish &>/dev/null; then
+    deploy_managed_file "${BASE_URL}/config.fish" "${HOME}/.config/fish/config.fish"
 fi
 
-# bash (for remote servers that don't have fish, and WSL Debian default shell)
-BASHRC="${HOME}/.bashrc"
-PATH_LINE='export PATH="$HOME/.local/bin:$PATH"'
+# bash/zsh/POSIX — deploy shared shell_common.sh and inject source line into rc files
+deploy_managed_file "${BASE_URL}/shell_common.sh" "${SHELL_COMMON}"
+chmod +x "${SHELL_COMMON}"
 
-# Ensure ~/.local/bin is in PATH so oh-my-posh can be found when .bashrc is sourced.
-# On Debian/Ubuntu this is normally added by ~/.profile, but that only runs for
-# login shells — interactive WSL sessions skip it.
-if ! grep -qF '.local/bin' "${BASHRC}" 2>/dev/null; then
-    echo "${PATH_LINE}" >> "${BASHRC}"
-    success "~/.local/bin added to PATH in .bashrc"
-fi
+# bash (Linux servers, WSL, macOS fallback)
+inject_source_line "${HOME}/.bashrc"
 
-if grep -q "oh-my-posh" "${BASHRC}" 2>/dev/null; then
-    grep -v "oh-my-posh" "${BASHRC}" > "${BASHRC}.tmp" && mv "${BASHRC}.tmp" "${BASHRC}"
+# zsh (macOS default since Catalina; common on Linux)
+if command -v zsh &>/dev/null; then
+    inject_source_line "${HOME}/.zshrc"
 fi
-echo "${OMP_BASH_LINE}" >> "${BASHRC}"
-success "oh-my-posh bash init added to .bashrc"
 
 # ── 11. GPG agent (signing/encryption only) ───────────────────────────────────
 #
@@ -440,9 +495,10 @@ success "oh-my-posh bash init added to .bashrc"
 # are used directly via the SSH client config (IdentityFile + IdentitiesOnly)
 # without going through an agent.
 
-# Install pinentry-curses if missing (required for GPG agent in terminal sessions)
-if ! command -v pinentry-curses &>/dev/null; then
-    info "pinentry-curses not found, installing..."
+# Install pinentry if missing (required for GPG agent in terminal sessions)
+# macOS uses pinentry (brew) or pinentry-mac; Linux uses pinentry-curses
+if ! command -v pinentry-curses &>/dev/null && ! command -v pinentry-mac &>/dev/null && ! command -v pinentry &>/dev/null; then
+    info "pinentry not found, installing..."
     if command -v apt-get &>/dev/null; then
         sudo apt-get install -y pinentry-curses
     elif command -v pacman &>/dev/null; then
@@ -450,9 +506,9 @@ if ! command -v pinentry-curses &>/dev/null; then
     elif command -v dnf &>/dev/null; then
         sudo dnf install -y pinentry
     elif command -v brew &>/dev/null; then
-        brew install pinentry
+        brew install pinentry-mac 2>/dev/null || brew install pinentry
     else
-        warn "Cannot install pinentry-curses: no supported package manager found."
+        warn "Cannot install pinentry: no supported package manager found."
     fi
 fi
 
@@ -466,7 +522,7 @@ PINENTRY_PATH=$(command -v pinentry-curses 2>/dev/null || command -v pinentry 2>
 
 if [[ -f "${GPG_AGENT_CONF}" ]] && grep -q "enable-ssh-support" "${GPG_AGENT_CONF}"; then
     warn "gpg-agent.conf has enable-ssh-support — removing to avoid conflict with FIDO2 SSH"
-    sed -i '/enable-ssh-support/d' "${GPG_AGENT_CONF}"
+    sedi '/enable-ssh-support/d' "${GPG_AGENT_CONF}"
     success "Removed enable-ssh-support from gpg-agent.conf"
 else
     success "gpg-agent.conf does not have SSH support enabled (correct)"
@@ -482,7 +538,7 @@ if [[ -n "${PINENTRY_PATH}" ]]; then
 fi
 
 # Remove any GPG agent SSH socket lines added by older versions of this script
-for SHELL_CONFIG in "${HOME}/.config/fish/config.fish" "${HOME}/.bashrc"; do
+for SHELL_CONFIG in "${HOME}/.config/fish/config.fish" "${HOME}/.bashrc" "${HOME}/.zshrc"; do
     if [[ -f "${SHELL_CONFIG}" ]] && grep -qE "gpg-agent|agent-ssh-socket|SSH_AUTH_SOCK" "${SHELL_CONFIG}"; then
         grep -vE "gpg-agent|agent-ssh-socket|SSH_AUTH_SOCK" "${SHELL_CONFIG}" > "${SHELL_CONFIG}.tmp" \
             && mv "${SHELL_CONFIG}.tmp" "${SHELL_CONFIG}"
