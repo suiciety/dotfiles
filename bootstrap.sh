@@ -15,7 +15,7 @@
 #   7. Installs unzip if missing (required by oh-my-posh installer)
 #   8. Installs oh-my-posh if missing
 #   9. Deploys the atomic.omp.json theme
-#  10. Configures fish and/or bash to use oh-my-posh
+#  10. Deploys config.fish (oh-my-posh + tmux auto-attach + VS Code guard) and configures bash
 #  11. Configures GPG agent for GPG operations only (not SSH); removes any old SSH_AUTH_SOCK lines
 
 set -euo pipefail
@@ -391,19 +391,28 @@ fi
 
 # ── 10. Shell configuration ────────────────────────────────────────────────────
 
-OMP_FISH_LINE='oh-my-posh init fish --config ~/.config/omp/atomic.omp.json | source'
 OMP_BASH_LINE='eval "$(oh-my-posh init bash --config ~/.config/omp/atomic.omp.json)"'
 
-# fish
+# fish — deploy config.fish from repo (includes VS Code guard, oh-my-posh, tmux auto-attach)
 if command -v fish &>/dev/null; then
     FISH_CONFIG="${HOME}/.config/fish/config.fish"
     mkdir -p "${HOME}/.config/fish"
-    if grep -q "oh-my-posh" "${FISH_CONFIG}" 2>/dev/null; then
-        grep -v "oh-my-posh" "${FISH_CONFIG}" > "${FISH_CONFIG}.tmp" && mv "${FISH_CONFIG}.tmp" "${FISH_CONFIG}"
-        success "oh-my-posh fish init updated in config.fish"
+    REMOTE_FISH=$(curl -fsSL "${BASE_URL}/config.fish")
+    if [[ -f "${FISH_CONFIG}" ]]; then
+        LOCAL_FISH=$(cat "${FISH_CONFIG}")
+        if [[ "${REMOTE_FISH}" == "${LOCAL_FISH}" ]]; then
+            success "config.fish already up to date"
+        else
+            BACKUP="${FISH_CONFIG}.bak.$(date +%Y%m%d%H%M%S)"
+            cp "${FISH_CONFIG}" "${BACKUP}"
+            warn "Existing config.fish backed up to ${BACKUP}"
+            echo "${REMOTE_FISH}" > "${FISH_CONFIG}"
+            success "config.fish updated"
+        fi
+    else
+        echo "${REMOTE_FISH}" > "${FISH_CONFIG}"
+        success "config.fish deployed"
     fi
-    echo "${OMP_FISH_LINE}" >> "${FISH_CONFIG}"
-    success "oh-my-posh fish init added to config.fish"
 fi
 
 # bash (for remote servers that don't have fish, and WSL Debian default shell)
