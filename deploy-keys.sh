@@ -44,23 +44,22 @@ deploy_to_host() {
 
     # ── SSH public keys ───────────────────────────────────────────────────────
     for key_file in "${SSH_KEYS[@]}"; do
-        local key_name key_content
+        local key_name
         key_name=$(basename "${key_file}")
-        key_content=$(cat "${key_file}")
 
-        if ssh "${host}" "grep -qF '${key_content}' ~/.ssh/authorized_keys 2>/dev/null"; then
+        if ssh "${host}" "grep -qF -f -" ~/.ssh/authorized_keys < "${key_file}" 2>/dev/null; then
             success "${key_name} already present on ${host}"
         else
-            ssh "${host}" "echo '${key_content}' >> ~/.ssh/authorized_keys"
+            ssh "${host}" "cat >> ~/.ssh/authorized_keys" < "${key_file}"
             success "${key_name} added to ${host}:~/.ssh/authorized_keys"
         fi
     done
 
     # ── GPG public key ────────────────────────────────────────────────────────
-    if ssh "${host}" "gpg --list-keys ${GPG_KEY_ID} &>/dev/null 2>&1"; then
+    if ssh "${host}" "gpg --list-keys '${GPG_KEY_ID}' >/dev/null 2>&1"; then
         success "GPG key ${GPG_KEY_ID} already imported on ${host}"
     else
-        cat "${GPG_KEY}" | ssh "${host}" "gpg --import 2>&1 | grep -v '^gpg:' || true"
+        ssh "${host}" "gpg --import" < "${GPG_KEY}" >/dev/null 2>&1 || true
         success "GPG key imported on ${host}"
     fi
 
