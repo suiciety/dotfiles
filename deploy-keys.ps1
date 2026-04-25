@@ -16,7 +16,7 @@ param(
 
 $ErrorActionPreference = 'Stop'
 
-$ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
+$ScriptDir = $PSScriptRoot
 $GPG_KEY_ID = '7190A66213322F4A'
 
 $SshKeys = @(
@@ -31,14 +31,14 @@ function Success { param($msg) Write-Host "[deploy-keys] ✓ $msg" -ForegroundCo
 function Warn    { param($msg) Write-Host "[deploy-keys] ! $msg" -ForegroundColor Yellow }
 
 function Deploy-ToHost {
-    param([string]$Host)
+    param([string]$Target)
 
-    Info "Deploying keys to $Host..."
+    Info "Deploying keys to $Target..."
 
     # Ensure ~/.ssh/authorized_keys exists with correct permissions
-    & ssh $Host 'mkdir -p ~/.ssh && chmod 700 ~/.ssh && touch ~/.ssh/authorized_keys && chmod 600 ~/.ssh/authorized_keys'
+    & ssh $Target 'mkdir -p ~/.ssh && chmod 700 ~/.ssh && touch ~/.ssh/authorized_keys && chmod 600 ~/.ssh/authorized_keys'
     if ($LASTEXITCODE -ne 0) {
-        Warn "Could not connect to $Host — skipping."
+        Warn "Could not connect to $Target — skipping."
         return
     }
 
@@ -52,12 +52,12 @@ function Deploy-ToHost {
         $keyName    = Split-Path $keyFile -Leaf
         $keyContent = (Get-Content $keyFile -Raw).Trim()
 
-        $alreadyPresent = & ssh $Host "grep -qF '$keyContent' ~/.ssh/authorized_keys 2>/dev/null; echo `$?"
-        if ($alreadyPresent.Trim() -eq '0') {
-            Success "$keyName already present on $Host"
+        $keyContent | & ssh $Target "grep -qF -f - ~/.ssh/authorized_keys" 2>$null
+        if ($LASTEXITCODE -eq 0) {
+            Success "$keyName already present on $Target"
         } else {
-            & ssh $Host "echo '$keyContent' >> ~/.ssh/authorized_keys"
-            Success "$keyName added to ${Host}:~/.ssh/authorized_keys"
+            $keyContent | & ssh $Target "cat >> ~/.ssh/authorized_keys"
+            Success "$keyName added to ${Target}:~/.ssh/authorized_keys"
         }
     }
 
@@ -65,17 +65,16 @@ function Deploy-ToHost {
     if (-not (Test-Path $GpgKey)) {
         Warn "marcus.gpg.pub not found locally — skipping GPG import."
     } else {
-        $gpgPresent = & ssh $Host "gpg --list-keys $GPG_KEY_ID &>/dev/null 2>&1; echo `$?"
-        if ($gpgPresent.Trim() -eq '0') {
-            Success "GPG key $GPG_KEY_ID already imported on $Host"
+        & ssh $Target "gpg --list-keys $GPG_KEY_ID >/dev/null 2>&1"
+        if ($LASTEXITCODE -eq 0) {
+            Success "GPG key $GPG_KEY_ID already imported on $Target"
         } else {
-            $gpgContent = Get-Content $GpgKey -Raw
-            & ssh $Host "echo '$gpgContent' | gpg --import 2>&1 | grep -v '^gpg:' || true"
-            Success "GPG key imported on $Host"
+            Get-Content $GpgKey -Raw | & ssh $Target "gpg --import 2>&1" | Where-Object { $_ -notmatch '^gpg:' } | Out-Null
+            Success "GPG key imported on $Target"
         }
     }
 
-    Success "All keys deployed to $Host"
+    Success "All keys deployed to $Target"
     Write-Host ""
 }
 

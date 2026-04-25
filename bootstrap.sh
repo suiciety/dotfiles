@@ -102,6 +102,10 @@ else
         sudo apt-get install -y libfido2-1
     elif command -v dnf &>/dev/null; then
         sudo dnf install -y libfido2
+    elif command -v zypper &>/dev/null; then
+        sudo zypper install -y libfido2-1
+    elif command -v apk &>/dev/null; then
+        sudo apk add --no-cache libfido2
     elif command -v brew &>/dev/null; then
         brew install libfido2
     else
@@ -248,6 +252,10 @@ tmux_build_from_source() {
         sudo dnf install -y libevent-devel ncurses-devel gcc make bison pkg-config
     elif command -v pacman &>/dev/null; then
         sudo pacman -S --noconfirm libevent ncurses base-devel bison pkg-config
+    elif command -v zypper &>/dev/null; then
+        sudo zypper install -y libevent-devel libncurses-devel gcc make bison pkg-config
+    elif command -v apk &>/dev/null; then
+        sudo apk add --no-cache libevent-dev ncurses-dev gcc make bison pkgconf
     else
         warn "Cannot install build dependencies: no supported package manager found."
         rm -rf "${tmp}"
@@ -268,6 +276,10 @@ if ! command -v tmux &>/dev/null; then
         sudo pacman -S --noconfirm tmux
     elif command -v dnf &>/dev/null; then
         sudo dnf install -y tmux
+    elif command -v zypper &>/dev/null; then
+        sudo zypper install -y tmux
+    elif command -v apk &>/dev/null; then
+        sudo apk add --no-cache tmux
     elif command -v brew &>/dev/null; then
         brew install tmux
     else
@@ -360,6 +372,10 @@ if ! command -v unzip &>/dev/null; then
         sudo pacman -S --noconfirm unzip
     elif command -v dnf &>/dev/null; then
         sudo dnf install -y unzip
+    elif command -v zypper &>/dev/null; then
+        sudo zypper install -y unzip
+    elif command -v apk &>/dev/null; then
+        sudo apk add --no-cache unzip
     elif command -v brew &>/dev/null; then
         brew install unzip
     else
@@ -507,6 +523,10 @@ if ! command -v pinentry-curses &>/dev/null && ! command -v pinentry-mac &>/dev/
         sudo pacman -S --noconfirm pinentry
     elif command -v dnf &>/dev/null; then
         sudo dnf install -y pinentry
+    elif command -v zypper &>/dev/null; then
+        sudo zypper install -y pinentry
+    elif command -v apk &>/dev/null; then
+        sudo apk add --no-cache pinentry
     elif command -v brew &>/dev/null; then
         brew install pinentry-mac 2>/dev/null || brew install pinentry
     else

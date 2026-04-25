@@ -36,8 +36,11 @@ install_packages() {
     elif command -v zypper &>/dev/null; then
         info "Detected: openSUSE (zypper)"
         zypper install -y pam_u2f libfido2-1
+    elif command -v apk &>/dev/null; then
+        info "Detected: Alpine (apk)"
+        apk add --no-cache pam-u2f libfido2 yubikey-manager
     else
-        die "No supported package manager found (pacman/apt/dnf/zypper). Install pam-u2f and libfido2 manually then re-run."
+        die "No supported package manager found (pacman/apt/dnf/zypper/apk). Install pam-u2f and libfido2 manually then re-run."
     fi
 }
 

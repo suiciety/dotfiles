@@ -48,7 +48,7 @@ deploy_to_host() {
         local key_name
         key_name=$(basename "${key_file}")
 
-        if ssh "${host}" "grep -qF -f -" ~/.ssh/authorized_keys < "${key_file}" 2>/dev/null; then
+        if ssh "${host}" "grep -qF -f - ~/.ssh/authorized_keys" < "${key_file}" 2>/dev/null; then
             success "${key_name} already present on ${host}"
         else
             ssh "${host}" "cat >> ~/.ssh/authorized_keys" < "${key_file}"

@@ -63,7 +63,7 @@ if (-not (Get-Command gpg -ErrorAction SilentlyContinue)) {
     Warn "gpg not found — install Gpg4win: https://www.gpg4win.org/"
     Warn "Skipping GPG key import."
 } else {
-    $gpgCheck = & gpg --list-keys $GPG_KEY_ID 2>&1
+    & gpg --list-keys $GPG_KEY_ID 2>&1 | Out-Null
     if ($LASTEXITCODE -eq 0) {
         Success "GPG key $GPG_KEY_ID already imported"
     } else {
@@ -139,7 +139,6 @@ function Export-YubiKeyStub {
         Warn "ssh-keygen -K failed — ensure YubiKey is fully inserted and try again."
         Warn "Manual fallback: cd `$env:USERPROFILE\.ssh; ssh-keygen -K"
         Warn "  Then rename: id_ed25519_sk_rk → $KeyName and id_ed25519_sk_rk.pub → $KeyName.pub"
-        Pop-Location
         Remove-Item $tmp.FullName -Recurse -Force -ErrorAction SilentlyContinue
         return
     } finally {
@@ -268,7 +267,7 @@ $profileContent = Get-Content $PROFILE -Raw -ErrorAction SilentlyContinue
 
 if ($profileContent -match 'oh-my-posh') {
     # Replace existing oh-my-posh line
-    $updated = ($profileContent -split "`n" | Where-Object { $_ -notmatch 'oh-my-posh' }) -join "`n"
+    $updated = ($profileContent -split "`r?`n" | Where-Object { $_ -notmatch 'oh-my-posh' }) -join "`n"
     Set-Content $PROFILE -Value ($updated.TrimEnd() + "`n$ompLine`n")
     Success "oh-my-posh profile line updated"
 } else {
