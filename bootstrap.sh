@@ -113,7 +113,7 @@ fi
 
 # -- Deploy .pub files from repo ----------------------------------------------
 
-for SK_PUB in homekey_sk.pub backupkey_sk.pub; do
+for SK_PUB in homekey_sk.pub backupkey_sk.pub ckey_sk.pub; do
     DEST="${HOME}/.ssh/${SK_PUB}"
     REMOTE_CONTENT=$(curl -fsSL "${BASE_URL}/${SK_PUB}")
     if [[ -f "${DEST}" ]]; then
@@ -193,6 +193,7 @@ export_yubikey_stub() {
 if [[ "${FIDO2_READY}" == true ]]; then
     export_yubikey_stub "homekey_sk"
     export_yubikey_stub "backupkey_sk"
+    export_yubikey_stub "ckey_sk"
 else
     warn "Skipping YubiKey stub export — fix prerequisites above first"
     warn "Manual fallback: cd ~/.ssh && ssh-keygen -K"
@@ -204,6 +205,7 @@ SSH_CONFIG="${HOME}/.ssh/config"
 FIDO2_CONFIG="Host *
     SecurityKeyProvider internal
     PreferredAuthentications publickey,password
+    IdentityFile ~/.ssh/ckey_sk
     IdentityFile ~/.ssh/homekey_sk
     IdentityFile ~/.ssh/backupkey_sk
     IdentitiesOnly yes"

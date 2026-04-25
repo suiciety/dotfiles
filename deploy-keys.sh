@@ -30,6 +30,7 @@ fi
 SSH_KEYS=(
     "${SCRIPT_DIR}/homekey_sk.pub"
     "${SCRIPT_DIR}/backupkey_sk.pub"
+    "${SCRIPT_DIR}/ckey_sk.pub"
 )
 
 GPG_KEY="${SCRIPT_DIR}/marcus.gpg.pub"

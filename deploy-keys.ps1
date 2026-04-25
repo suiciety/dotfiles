@@ -22,6 +22,7 @@ $GPG_KEY_ID = '7190A66213322F4A'
 $SshKeys = @(
     Join-Path $ScriptDir 'homekey_sk.pub'
     Join-Path $ScriptDir 'backupkey_sk.pub'
+    Join-Path $ScriptDir 'ckey_sk.pub'
 )
 $GpgKey = Join-Path $ScriptDir 'marcus.gpg.pub'
 

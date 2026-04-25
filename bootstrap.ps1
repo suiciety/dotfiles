@@ -85,7 +85,7 @@ New-Item -ItemType Directory -Path $SSH_DIR -Force | Out-Null
 
 # -- Deploy .pub files from repo ----------------------------------------------
 
-foreach ($pub in @('homekey_sk.pub', 'backupkey_sk.pub')) {
+foreach ($pub in @('homekey_sk.pub', 'backupkey_sk.pub', 'ckey_sk.pub')) {
     $dest = Join-Path $SSH_DIR $pub
     $remote = (Invoke-WebRequest -Uri "$BASE_URL/$pub" -UseBasicParsing).Content.Trim()
 
@@ -173,6 +173,7 @@ $sshFido2Ready = ($null -ne $sshVer -and $sshVer -ge [version]'8.2')
 if ($sshFido2Ready) {
     Export-YubiKeyStub 'homekey_sk'
     Export-YubiKeyStub 'backupkey_sk'
+    Export-YubiKeyStub 'ckey_sk'
 } else {
     Warn "Skipping YubiKey stub export — fix OpenSSH version first"
     Warn "Manual fallback: cd `$env:USERPROFILE\.ssh; ssh-keygen -K"
@@ -187,6 +188,7 @@ $fido2Block = @"
 Host *
     SecurityKeyProvider internal
     PreferredAuthentications publickey,password
+    IdentityFile ~/.ssh/ckey_sk
     IdentityFile ~/.ssh/homekey_sk
     IdentityFile ~/.ssh/backupkey_sk
     IdentitiesOnly yes
