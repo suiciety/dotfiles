@@ -15,8 +15,13 @@ curl -fsSL https://raw.githubusercontent.com/suiciety/dotfiles/main/bootstrap.sh
 Supports Debian/Ubuntu (apt), Arch (pacman), Fedora (dnf), openSUSE (zypper),
 Alpine (apk), and macOS (Homebrew). On macOS it also installs a Nerd Font
 (CaskaydiaCove) so the tmux status bar and oh-my-posh prompt glyphs render
-correctly — set your terminal app's font to **CaskaydiaCove Nerd Font**
-afterwards (Terminal.app / iTerm2: Preferences → Profiles → Text).
+correctly — set your terminal app's font to **CaskaydiaCove Nerd Font Mono**
+afterwards (Terminal.app / iTerm2: Preferences → Profiles → Text). Use the
+**Mono** variant specifically: tmux miscalculates cell widths for non-mono
+Nerd Font icons (Private Use Area glyphs have no official width rule, and
+this is a known tmux limitation — [tmux#3799](https://github.com/tmux/tmux/issues/3799)),
+so icons that render fine in a plain terminal window break inside tmux
+unless the font forces every glyph to a fixed single-cell width.
 
 > **Intel Macs:** Homebrew 7.0+ dropped support for Intel processors
 > ("Homebrew on macOS is only supported on Apple Silicon processors!"). The

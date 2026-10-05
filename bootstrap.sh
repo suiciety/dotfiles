@@ -685,5 +685,9 @@ if [[ "$(uname -s)" == "Darwin" ]]; then
         warn "downloading the Nerd Font directly instead."
         install_nerd_font_manually
     fi
-    warn "Set your terminal app's font to 'CaskaydiaCove Nerd Font' (Terminal.app/iTerm2: Preferences → Profiles → Text)."
+    warn "Set your terminal app's font to 'CaskaydiaCove Nerd Font Mono' (Terminal.app/iTerm2:"
+    warn "Preferences → Profiles → Text). Use the Mono variant, not the plain one — tmux"
+    warn "miscalculates cell widths for non-mono Nerd Font icons (a known tmux limitation with"
+    warn "Private Use Area glyphs), causing broken rendering inside tmux even though the same"
+    warn "font looks fine in a plain terminal window."
 fi
