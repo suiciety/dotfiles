@@ -296,7 +296,12 @@ tmux_build_from_source() {
     fi
     curl -fsSL "https://github.com/tmux/tmux/releases/download/${TMUX_BUILD_VERSION}/tmux-${TMUX_BUILD_VERSION}.tar.gz" \
         | tar -xz -C "${tmp}"
-    (cd "${tmp}/tmux-${TMUX_BUILD_VERSION}" && ./configure && make && sudo make install)
+    # macOS tmux configure requires an explicit Unicode choice; utf8proc isn't
+    # available without brew, so disable it (only affects complex emoji
+    # rendering — Nerd Font icon glyphs still work fine).
+    local tmux_configure_flags=()
+    [[ "$(uname -s)" == "Darwin" ]] && tmux_configure_flags+=(--disable-utf8proc)
+    (cd "${tmp}/tmux-${TMUX_BUILD_VERSION}" && ./configure "${tmux_configure_flags[@]}" && make && sudo make install)
     rm -rf "${tmp}"
     success "tmux $(tmux -V) built and installed to /usr/local/bin"
 }
