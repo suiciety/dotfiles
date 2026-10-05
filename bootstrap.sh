@@ -259,6 +259,7 @@ tmux_build_from_source() {
     info "Building tmux ${TMUX_BUILD_VERSION} from source..."
     local tmp
     tmp=$(mktemp -d)
+    local have_utf8proc=0
     if command -v apt-get &>/dev/null; then
         sudo apt-get install -y libevent-dev libncurses-dev build-essential bison pkg-config
     elif command -v dnf &>/dev/null; then
@@ -289,6 +290,20 @@ tmux_build_from_source() {
             rm -rf "${tmp}"
             return 1
         fi
+        # macOS's libc wcwidth() misjudges the width of Nerd Font icons (they
+        # live in the Unicode Private Use Area, which has no official width
+        # rule) — tmux then miscalculates cell widths and the status bar/pane
+        # border icons render broken, even with a Nerd Font Mono font selected.
+        # utf8proc gives tmux its own, more correct width tables, fixing this.
+        info "Building utf8proc (fixes Nerd Font icon rendering in tmux on macOS)..."
+        local UTF8PROC_VERSION="2.12.0"
+        if curl -fsSL "https://github.com/JuliaStrings/utf8proc/releases/download/v${UTF8PROC_VERSION}/utf8proc-${UTF8PROC_VERSION}.tar.gz" \
+                | tar -xz -C "${tmp}" \
+            && (cd "${tmp}/utf8proc-${UTF8PROC_VERSION}" && make && sudo make install); then
+            have_utf8proc=1
+        else
+            warn "Failed to build utf8proc — tmux will fall back to macOS's native (poorer) Unicode width handling."
+        fi
     else
         warn "Cannot install build dependencies: no supported package manager found."
         rm -rf "${tmp}"
@@ -296,11 +311,19 @@ tmux_build_from_source() {
     fi
     curl -fsSL "https://github.com/tmux/tmux/releases/download/${TMUX_BUILD_VERSION}/tmux-${TMUX_BUILD_VERSION}.tar.gz" \
         | tar -xz -C "${tmp}"
-    # macOS tmux configure requires an explicit Unicode choice; utf8proc isn't
-    # available without brew, so disable it (only affects complex emoji
-    # rendering — Nerd Font icon glyphs still work fine).
+    # macOS tmux configure requires an explicit Unicode choice. Prefer
+    # utf8proc (built above) when available; its lack is what breaks Nerd
+    # Font icon rendering inside tmux, not the font itself.
     local tmux_configure_flags=()
-    [[ "$(uname -s)" == "Darwin" ]] && tmux_configure_flags+=(--disable-utf8proc)
+    if [[ "$(uname -s)" == "Darwin" ]]; then
+        if [[ "${have_utf8proc}" == "1" ]]; then
+            tmux_configure_flags+=(--enable-utf8proc)
+            export LIBUTF8PROC_CFLAGS="-I/usr/local/include"
+            export LIBUTF8PROC_LIBS="-L/usr/local/lib -lutf8proc"
+        else
+            tmux_configure_flags+=(--disable-utf8proc)
+        fi
+    fi
     (cd "${tmp}/tmux-${TMUX_BUILD_VERSION}" && ./configure "${tmux_configure_flags[@]}" && make && sudo make install)
     rm -rf "${tmp}"
     success "tmux $(tmux -V) built and installed to /usr/local/bin"
@@ -686,8 +709,8 @@ if [[ "$(uname -s)" == "Darwin" ]]; then
         install_nerd_font_manually
     fi
     warn "Set your terminal app's font to 'CaskaydiaCove Nerd Font Mono' (Terminal.app/iTerm2:"
-    warn "Preferences → Profiles → Text). Use the Mono variant, not the plain one — tmux"
-    warn "miscalculates cell widths for non-mono Nerd Font icons (a known tmux limitation with"
-    warn "Private Use Area glyphs), causing broken rendering inside tmux even though the same"
-    warn "font looks fine in a plain terminal window."
+    warn "Preferences → Profiles → Text). The Mono variant keeps icon cell widths predictable;"
+    warn "if tmux was built from source above, it now also links utf8proc for correct Nerd Font"
+    warn "icon width calculation (macOS's native wcwidth() otherwise misjudges Private Use Area"
+    warn "glyphs, breaking icon rendering in tmux even when the same font looks fine elsewhere)."
 fi

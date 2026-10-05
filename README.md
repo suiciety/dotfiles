@@ -16,12 +16,13 @@ Supports Debian/Ubuntu (apt), Arch (pacman), Fedora (dnf), openSUSE (zypper),
 Alpine (apk), and macOS (Homebrew). On macOS it also installs a Nerd Font
 (CaskaydiaCove) so the tmux status bar and oh-my-posh prompt glyphs render
 correctly — set your terminal app's font to **CaskaydiaCove Nerd Font Mono**
-afterwards (Terminal.app / iTerm2: Preferences → Profiles → Text). Use the
-**Mono** variant specifically: tmux miscalculates cell widths for non-mono
-Nerd Font icons (Private Use Area glyphs have no official width rule, and
-this is a known tmux limitation — [tmux#3799](https://github.com/tmux/tmux/issues/3799)),
-so icons that render fine in a plain terminal window break inside tmux
-unless the font forces every glyph to a fixed single-cell width.
+afterwards (Terminal.app / iTerm2: Preferences → Profiles → Text). When tmux
+is built from source (Intel Macs without a working Homebrew), bootstrap.sh
+also builds and links **utf8proc**, which fixes a known tmux limitation
+([tmux#3799](https://github.com/tmux/tmux/issues/3799)) where tmux
+miscalculates the cell width of Nerd Font icons (Private Use Area glyphs have
+no official width rule) and renders them broken even though the same font
+looks fine outside tmux.
 
 > **Intel Macs:** Homebrew 7.0+ dropped support for Intel processors
 > ("Homebrew on macOS is only supported on Apple Silicon processors!"). The
@@ -29,9 +30,12 @@ unless the font forces every glyph to a fixed single-cell width.
 > - downloading the Nerd Font directly from the
 >   [nerd-fonts](https://github.com/ryanoasis/nerd-fonts) GitHub releases into
 >   `~/Library/Fonts`
-> - building tmux from source (and libevent, its only missing dependency —
->   ncurses/clang ship with Xcode Command Line Tools; run
->   `xcode-select --install` first if you haven't already)
+> - building tmux from source, along with its dependencies libevent and
+>   utf8proc (ncurses/clang ship with Xcode Command Line Tools; run
+>   `xcode-select --install` first if you haven't already). utf8proc is what
+>   fixes correct Nerd Font icon width calculation inside tmux — without it,
+>   tmux falls back to macOS's native `wcwidth()`, which misjudges Private Use
+>   Area glyphs and breaks icon rendering.
 >
 > no Homebrew required for either. Other brew-dependent steps (libfido2,
 > pinentry) will warn and skip gracefully instead of aborting the script if
