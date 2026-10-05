@@ -282,7 +282,7 @@ tmux_build_from_source() {
         if ! (curl -fsSL "https://github.com/libevent/libevent/releases/download/release-${LIBEVENT_VERSION}/libevent-${LIBEVENT_VERSION}.tar.gz" \
                 | tar -xz -C "${tmp}" \
             && cd "${tmp}/libevent-${LIBEVENT_VERSION}" \
-            && ./configure --prefix=/usr/local \
+            && ./configure --prefix=/usr/local --disable-openssl \
             && make \
             && sudo make install); then
             warn "Failed to build libevent — cannot build tmux from source."
