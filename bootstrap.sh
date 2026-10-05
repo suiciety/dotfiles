@@ -570,6 +570,16 @@ if command -v zsh &>/dev/null; then
     inject_source_line "${HOME}/.zshrc"
 fi
 
+# macOS: deploy ~/.zshenv to default LANG/LC_ALL to UTF-8 for headless sessions.
+# macOS (unlike most Linux distros) sets no system-wide locale default outside the
+# GUI session, so SSH clients that don't forward LANG/LC_* (e.g. Windows' OpenSSH
+# client) land in the "C"/POSIX locale, breaking UTF-8/Nerd Font glyph rendering
+# in tmux and the shell. ~/.zshenv is sourced by every zsh invocation, including
+# non-interactive SSH sessions, unlike .zshrc/.zprofile.
+if [[ "$(uname -s)" == "Darwin" ]]; then
+    deploy_managed_file "${BASE_URL}/zshenv.macos" "${HOME}/.zshenv"
+fi
+
 # ── 11. GPG agent (signing/encryption only) ───────────────────────────────────
 #
 # GPG agent is configured for GPG operations only (signing, encryption).

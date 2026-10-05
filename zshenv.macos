@@ -1,0 +1,10 @@
+# Sourced by every zsh invocation (login, non-login, interactive, non-interactive),
+# including headless SSH sessions. macOS has no system-wide LANG default for
+# non-GUI sessions (unlike most Linux distros, which set one via /etc/default/locale
+# or /etc/environment + pam_env). Without this, an SSH client that doesn't send its
+# own LANG/LC_* (e.g. Windows' OpenSSH client used by Windows Terminal) lands in a
+# "C"/POSIX locale here, which breaks UTF-8/Nerd Font glyph handling in tmux and the
+# shell even though sshd_config's "AcceptEnv LANG LC_*" is correctly set.
+: "${LANG:=en_AU.UTF-8}"
+: "${LC_ALL:=en_AU.UTF-8}"
+export LANG LC_ALL
