@@ -269,6 +269,26 @@ tmux_build_from_source() {
         sudo zypper install -y libevent-devel libncurses-devel gcc make bison pkg-config
     elif command -v apk &>/dev/null; then
         sudo apk add --no-cache libevent-dev ncurses-dev gcc make bison pkgconf
+    elif [[ "$(uname -s)" == "Darwin" ]]; then
+        # No brew on Intel Macs (Homebrew 7.0+ dropped support): build libevent
+        # from source too. ncurses/clang ship with Xcode Command Line Tools.
+        if ! xcode-select -p &>/dev/null; then
+            warn "Xcode Command Line Tools not found. Run 'xcode-select --install' and re-run bootstrap.sh."
+            rm -rf "${tmp}"
+            return 1
+        fi
+        info "Building libevent (tmux dependency) from source..."
+        local LIBEVENT_VERSION="2.1.12-stable"
+        if ! (curl -fsSL "https://github.com/libevent/libevent/releases/download/release-${LIBEVENT_VERSION}/libevent-${LIBEVENT_VERSION}.tar.gz" \
+                | tar -xz -C "${tmp}" \
+            && cd "${tmp}/libevent-${LIBEVENT_VERSION}" \
+            && ./configure --prefix=/usr/local \
+            && make \
+            && sudo make install); then
+            warn "Failed to build libevent — cannot build tmux from source."
+            rm -rf "${tmp}"
+            return 1
+        fi
     else
         warn "Cannot install build dependencies: no supported package manager found."
         rm -rf "${tmp}"
@@ -295,6 +315,9 @@ if ! command -v tmux &>/dev/null; then
         sudo apk add --no-cache tmux
     elif brew_works; then
         brew install tmux || warn "brew install tmux failed — install it manually."
+    elif [[ "$(uname -s)" == "Darwin" ]]; then
+        warn "Homebrew unavailable (e.g. Intel Mac on Homebrew 7.0+) — building tmux from source instead."
+        tmux_build_from_source || warn "Could not build tmux from source. Install it manually."
     else
         warn "Cannot install tmux: no supported package manager found. Install it manually."
     fi

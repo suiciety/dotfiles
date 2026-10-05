@@ -20,11 +20,17 @@ afterwards (Terminal.app / iTerm2: Preferences → Profiles → Text).
 
 > **Intel Macs:** Homebrew 7.0+ dropped support for Intel processors
 > ("Homebrew on macOS is only supported on Apple Silicon processors!"). The
-> script detects this automatically and falls back to downloading the Nerd
-> Font directly from the [nerd-fonts](https://github.com/ryanoasis/nerd-fonts)
-> GitHub releases into `~/Library/Fonts` — no Homebrew required. Other
-> brew-dependent steps (tmux, libfido2, pinentry) will warn and skip
-> gracefully instead of aborting the script if brew isn't usable.
+> script detects this automatically and falls back to:
+> - downloading the Nerd Font directly from the
+>   [nerd-fonts](https://github.com/ryanoasis/nerd-fonts) GitHub releases into
+>   `~/Library/Fonts`
+> - building tmux from source (and libevent, its only missing dependency —
+>   ncurses/clang ship with Xcode Command Line Tools; run
+>   `xcode-select --install` first if you haven't already)
+>
+> no Homebrew required for either. Other brew-dependent steps (libfido2,
+> pinentry) will warn and skip gracefully instead of aborting the script if
+> brew isn't usable.
 
 ### Windows
 
