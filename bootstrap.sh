@@ -30,6 +30,13 @@ info()    { echo "[bootstrap] $*"; }
 success() { echo "[bootstrap] ✓ $*"; }
 warn()    { echo "[bootstrap] ! $*"; }
 
+# Homebrew 7.0+ dropped support for Intel Macs ("only supported on Apple
+# Silicon processors" — brew exits nonzero immediately on any command), so
+# `command -v brew` alone is no longer a reliable signal that brew works.
+# `brew config` is a cheap no-op-ish command that fails the same way install
+# would, letting us detect this before committing to a brew install.
+brew_works() { command -v brew &>/dev/null && brew config &>/dev/null; }
+
 # Portable sed -i: GNU sed (Linux) uses -i; BSD sed (macOS) requires -i ''
 if sed --version 2>/dev/null | grep -q GNU; then
     sedi() { sed -i "$@"; }
@@ -108,8 +115,8 @@ else
         sudo zypper install -y libfido2-1
     elif command -v apk &>/dev/null; then
         sudo apk add --no-cache libfido2
-    elif command -v brew &>/dev/null; then
-        brew install libfido2
+    elif brew_works; then
+        brew install libfido2 || { warn "brew install libfido2 failed"; FIDO2_READY=false; }
     else
         warn "Cannot install libfido2: no supported package manager found. Install it manually."
         FIDO2_READY=false
@@ -238,12 +245,16 @@ TMUX_MIN_VERSION="3.4"
 TMUX_BUILD_VERSION="3.6"
 
 tmux_build_from_source() {
-    # macOS: brew always has a recent tmux; build-from-source is a Linux path
-    if command -v brew &>/dev/null; then
+    # macOS: brew always has a recent tmux; build-from-source is a Linux path.
+    # Falls through to source build when brew is missing/broken (e.g. Intel
+    # Macs on Homebrew 7.0+, which dropped Intel support entirely).
+    if brew_works; then
         info "On macOS: upgrading tmux via brew..."
-        brew upgrade tmux 2>/dev/null || brew install tmux
-        success "tmux $(tmux -V) installed via brew"
-        return 0
+        if brew upgrade tmux 2>/dev/null || brew install tmux; then
+            success "tmux $(tmux -V) installed via brew"
+            return 0
+        fi
+        warn "brew tmux install failed — falling back to building from source."
     fi
     info "Building tmux ${TMUX_BUILD_VERSION} from source..."
     local tmp
@@ -282,8 +293,8 @@ if ! command -v tmux &>/dev/null; then
         sudo zypper install -y tmux
     elif command -v apk &>/dev/null; then
         sudo apk add --no-cache tmux
-    elif command -v brew &>/dev/null; then
-        brew install tmux
+    elif brew_works; then
+        brew install tmux || warn "brew install tmux failed — install it manually."
     else
         warn "Cannot install tmux: no supported package manager found. Install it manually."
     fi
@@ -378,8 +389,8 @@ if ! command -v unzip &>/dev/null; then
         sudo zypper install -y unzip
     elif command -v apk &>/dev/null; then
         sudo apk add --no-cache unzip
-    elif command -v brew &>/dev/null; then
-        brew install unzip
+    elif brew_works; then
+        brew install unzip || { warn "brew install unzip failed. Install it manually and re-run."; exit 1; }
     else
         warn "Cannot install unzip: no supported package manager found. Install it manually and re-run."
         exit 1
@@ -529,8 +540,8 @@ if ! command -v pinentry-curses &>/dev/null && ! command -v pinentry-mac &>/dev/
         sudo zypper install -y pinentry
     elif command -v apk &>/dev/null; then
         sudo apk add --no-cache pinentry
-    elif command -v brew &>/dev/null; then
-        brew install pinentry-mac 2>/dev/null || brew install pinentry
+    elif brew_works; then
+        brew install pinentry-mac 2>/dev/null || brew install pinentry || warn "brew install pinentry failed — install it manually."
     else
         warn "Cannot install pinentry: no supported package manager found."
     fi
@@ -592,27 +603,59 @@ if grep -qi microsoft /proc/version 2>/dev/null; then
     warn "  Alternatively install one from: https://www.nerdfonts.com/font-downloads"
 fi
 
+# Direct (brew-independent) Nerd Font install: downloads the patched Cascadia
+# Code family straight from the nerd-fonts GitHub releases and drops the TTFs
+# into ~/Library/Fonts. Used as the primary path on Intel Macs, where Homebrew
+# 7.0+ refuses to run at all ("only supported on Apple Silicon processors"),
+# and as a fallback if the cask install fails for any other reason.
+install_nerd_font_manually() {
+    local user_fonts="${HOME}/Library/Fonts"
+    if ls "${user_fonts}"/CaskaydiaCoveNerdFont*.ttf &>/dev/null; then
+        success "CaskaydiaCove Nerd Font already installed in ${user_fonts}"
+        return 0
+    fi
+    info "Downloading CaskaydiaCove Nerd Font from nerd-fonts releases..."
+    local tmp
+    tmp="$(mktemp -d)"
+    if curl -fsSL -o "${tmp}/CascadiaCode.zip" \
+        "https://github.com/ryanoasis/nerd-fonts/releases/latest/download/CascadiaCode.zip"; then
+        mkdir -p "${user_fonts}"
+        unzip -oq "${tmp}/CascadiaCode.zip" -d "${tmp}/extracted"
+        find "${tmp}/extracted" -name "*.ttf" ! -iname "*Windows Compatible*" \
+            -exec cp {} "${user_fonts}/" \;
+        rm -rf "${tmp}"
+        success "CaskaydiaCove Nerd Font installed to ${user_fonts}"
+        return 0
+    fi
+    rm -rf "${tmp}"
+    warn "Automatic download failed — install manually from https://www.nerdfonts.com/font-downloads"
+    return 1
+}
+
 if [[ "$(uname -s)" == "Darwin" ]]; then
     echo ""
-    if command -v brew &>/dev/null; then
+    info "Nerd Font glyphs (tmux status bar, oh-my-posh prompt arrows) require a Nerd Font."
+    # Homebrew 7.0+ dropped support for Intel Macs ("only supported on Apple
+    # Silicon processors"), so prefer brew only when it actually works here.
+    if brew_works; then
         FONT_CASK="font-caskaydia-cove-nerd-font"
         if brew list --cask "${FONT_CASK}" &>/dev/null; then
             success "${FONT_CASK} already installed"
         else
-            info "Nerd Font glyphs (tmux status bar, oh-my-posh prompt arrows) require a Nerd Font."
             printf "[bootstrap] ? Install %s via Homebrew? [Y/n] " "${FONT_CASK}"
             read -r INSTALL_FONT </dev/tty
             if [[ ! "${INSTALL_FONT}" =~ ^[Nn]$ ]]; then
                 brew install --cask "${FONT_CASK}" \
                     && success "${FONT_CASK} installed" \
-                    || warn "Failed to install ${FONT_CASK} — install manually from https://www.nerdfonts.com/font-downloads"
+                    || install_nerd_font_manually
             else
                 warn "Skipping Nerd Font install. Set a Nerd Font manually in your terminal app's preferences."
             fi
         fi
-        warn "Set your terminal app's font to 'CaskaydiaCove Nerd Font' (Terminal.app/iTerm2: Preferences → Profiles → Text)."
     else
-        warn "Homebrew not found — install a Nerd Font manually from https://www.nerdfonts.com/font-downloads"
-        warn "and set it in your terminal app's font preferences."
+        warn "Homebrew unavailable or unsupported on this Mac (e.g. Intel-only Homebrew 7.0+) —"
+        warn "downloading the Nerd Font directly instead."
+        install_nerd_font_manually
     fi
+    warn "Set your terminal app's font to 'CaskaydiaCove Nerd Font' (Terminal.app/iTerm2: Preferences → Profiles → Text)."
 fi

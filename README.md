@@ -13,11 +13,18 @@ curl -fsSL https://raw.githubusercontent.com/suiciety/dotfiles/main/bootstrap.sh
 ```
 
 Supports Debian/Ubuntu (apt), Arch (pacman), Fedora (dnf), openSUSE (zypper),
-Alpine (apk), and macOS (Homebrew). On macOS it also offers to install a
-Nerd Font (`font-caskaydia-cove-nerd-font`) via `brew install --cask` so the
-tmux status bar and oh-my-posh prompt glyphs render correctly — set your
-terminal app's font to **CaskaydiaCove Nerd Font** afterwards (Terminal.app /
-iTerm2: Preferences → Profiles → Text).
+Alpine (apk), and macOS (Homebrew). On macOS it also installs a Nerd Font
+(CaskaydiaCove) so the tmux status bar and oh-my-posh prompt glyphs render
+correctly — set your terminal app's font to **CaskaydiaCove Nerd Font**
+afterwards (Terminal.app / iTerm2: Preferences → Profiles → Text).
+
+> **Intel Macs:** Homebrew 7.0+ dropped support for Intel processors
+> ("Homebrew on macOS is only supported on Apple Silicon processors!"). The
+> script detects this automatically and falls back to downloading the Nerd
+> Font directly from the [nerd-fonts](https://github.com/ryanoasis/nerd-fonts)
+> GitHub releases into `~/Library/Fonts` — no Homebrew required. Other
+> brew-dependent steps (tmux, libfido2, pinentry) will warn and skip
+> gracefully instead of aborting the script if brew isn't usable.
 
 ### Windows
 
@@ -54,8 +61,9 @@ Windows Terminal profile — bootstrap.sh will print a reminder.
 ## Requirements
 
 - **Nerd Font** — required for tmux status bar icons and oh-my-posh prompt glyphs.
-  - macOS: installed automatically via `brew install --cask font-caskaydia-cove-nerd-font`
-    (bootstrap.sh will prompt), or grab one manually from
+  - macOS: installed automatically (Homebrew cask on Apple Silicon, or a direct
+    download from nerd-fonts GitHub releases on Intel / when brew is
+    unavailable), or grab one manually from
     [nerdfonts.com](https://www.nerdfonts.com/font-downloads).
   - Windows Terminal: ships with CaskaydiaCove/CaskaydiaMono Nerd Font already.
   - Linux terminal emulators: install a Nerd Font manually and set it as your
