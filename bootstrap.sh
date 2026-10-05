@@ -18,6 +18,8 @@
 #  10. Deploys shell configs: config.fish (fish), shell_common.sh (bash/zsh/POSIX) with VS Code
 #      guard, oh-my-posh prompt, and tmux auto-attach; sources shell_common.sh from rc files
 #  11. Configures GPG agent for GPG operations only (not SSH); removes any old SSH_AUTH_SOCK lines
+#  12. macOS: offers to install a Nerd Font (CaskaydiaCove) via Homebrew cask for tmux/oh-my-posh
+#      glyphs; WSL: prints a reminder to set a Nerd Font in Windows Terminal
 
 set -euo pipefail
 
@@ -588,4 +590,29 @@ if grep -qi microsoft /proc/version 2>/dev/null; then
     warn "  Windows Terminal → Settings → your Debian profile → Appearance → Font face"
     warn "  Set to: CaskaydiaCove Nerd Font (or any other Nerd Font you have installed)"
     warn "  Alternatively install one from: https://www.nerdfonts.com/font-downloads"
+fi
+
+if [[ "$(uname -s)" == "Darwin" ]]; then
+    echo ""
+    if command -v brew &>/dev/null; then
+        FONT_CASK="font-caskaydia-cove-nerd-font"
+        if brew list --cask "${FONT_CASK}" &>/dev/null; then
+            success "${FONT_CASK} already installed"
+        else
+            info "Nerd Font glyphs (tmux status bar, oh-my-posh prompt arrows) require a Nerd Font."
+            printf "[bootstrap] ? Install %s via Homebrew? [Y/n] " "${FONT_CASK}"
+            read -r INSTALL_FONT </dev/tty
+            if [[ ! "${INSTALL_FONT}" =~ ^[Nn]$ ]]; then
+                brew install --cask "${FONT_CASK}" \
+                    && success "${FONT_CASK} installed" \
+                    || warn "Failed to install ${FONT_CASK} — install manually from https://www.nerdfonts.com/font-downloads"
+            else
+                warn "Skipping Nerd Font install. Set a Nerd Font manually in your terminal app's preferences."
+            fi
+        fi
+        warn "Set your terminal app's font to 'CaskaydiaCove Nerd Font' (Terminal.app/iTerm2: Preferences → Profiles → Text)."
+    else
+        warn "Homebrew not found — install a Nerd Font manually from https://www.nerdfonts.com/font-downloads"
+        warn "and set it in your terminal app's font preferences."
+    fi
 fi
